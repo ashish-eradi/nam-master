@@ -33,10 +33,6 @@ def upgrade():
     op.create_index('ix_timetable_entries_teacher_id', 'timetable_entries', ['teacher_id'])
     op.create_index('ix_timetable_entries_school_id_day', 'timetable_entries', ['school_id', 'day_of_week'])
 
-    # SMS notifications: history queries
-    op.create_index('ix_sms_notifications_school_id', 'sms_notifications', ['school_id'])
-    op.create_index('ix_sms_notifications_student_id', 'sms_notifications', ['student_id'])
-
     # Audit logs: common lookup
     op.create_index('ix_audit_logs_school_id', 'audit_logs', ['school_id'])
     op.create_index('ix_audit_logs_user_id', 'audit_logs', ['user_id'])
@@ -65,9 +61,6 @@ def downgrade():
 
     op.drop_index('ix_timetable_entries_teacher_id', 'timetable_entries')
     op.drop_index('ix_timetable_entries_school_id_day', 'timetable_entries')
-
-    op.drop_index('ix_sms_notifications_school_id', 'sms_notifications')
-    op.drop_index('ix_sms_notifications_student_id', 'sms_notifications')
 
     op.drop_index('ix_audit_logs_school_id', 'audit_logs')
     op.drop_index('ix_audit_logs_user_id', 'audit_logs')
