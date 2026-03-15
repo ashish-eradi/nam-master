@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Niladri Edu Pro</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    header .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    header .logo svg { width: 28px; height: 28px; }
+    header h1 { font-size: 18px; font-weight: 600; color: #f1f5f9; }
+    header .version { font-size: 11px; color: #64748b; margin-top: 2px; }
+
+    #docker-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: #0f172a;
+      border: 1px solid #334155;
+    }
+    #docker-badge .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #64748b;
+      transition: background 0.3s;
+    }
+    #docker-badge.ok .dot { background: #22c55e; }
+    #docker-badge.error .dot { background: #ef4444; }
+
+    /* ── Main Layout ── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Left Panel ── */
+    .left {
+      width: 56%;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 6px;
+      padding: 9px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:hover { opacity: 0.85; }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-start  { background: #16a34a; color: #fff; }
+    .btn-stop   { background: #dc2626; color: #fff; }
+    .btn-restart { background: #d97706; color: #fff; }
+    .btn-portal { background: #2563eb; color: #fff; font-size: 13px; padding: 9px 18px; }
+
+    /* ── Section titles ── */
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      margin-bottom: 2px;
+    }
+
+    /* ── Service Cards ── */
+    .service-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .service-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: border-color 0.3s;
+    }
+    .service-card.healthy { border-left: 3px solid #22c55e; }
+    .service-card.starting { border-left: 3px solid #f59e0b; }
+    .service-card.stopped { border-left: 3px solid #64748b; }
+    .service-card.docker-down { border-left: 3px solid #ef4444; }
+
+    .service-icon {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .service-icon.db-icon     { background: #1e3a5f; }
+    .service-icon.api-icon    { background: #1a3a1a; }
+    .service-icon.school-icon { background: #1e1b4b; }
+
+    .service-info { flex: 1; min-width: 0; }
+    .service-name { font-size: 13px; font-weight: 500; color: #cbd5e1; }
+    .service-status {
+      font-size: 11px;
+      margin-top: 2px;
+      font-weight: 500;
+    }
+    .service-status.healthy  { color: #22c55e; }
+    .service-status.starting { color: #f59e0b; }
+    .service-status.stopped  { color: #94a3b8; }
+    .service-status.docker-down { color: #ef4444; }
+
+    .service-port {
+      font-size: 10px;
+      color: #475569;
+      margin-top: 1px;
+    }
+
+    /* ── Open Portals Section ── */
+    .portal-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Right Panel (Logs) ── */
+    .right {
+      width: 44%;
+      border-left: 1px solid #1e293b;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+    }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .log-service-tabs {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .log-tab {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 4px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .log-tab:hover { border-color: #64748b; color: #e2e8f0; }
+    .log-tab.active { background: #334155; color: #f1f5f9; border-color: #475569; }
+
+    .btn-clear-log {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 4px 10px;
+    }
+    .btn-clear-log:hover { color: #e2e8f0; }
+
+    #log-output {
+      flex: 1;
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 11px;
+      color: #94a3b8;
+      overflow-y: auto;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    #log-output .log-info  { color: #38bdf8; }
+    #log-output .log-ok    { color: #4ade80; }
+    #log-output .log-warn  { color: #fb923c; }
+    #log-output .log-error { color: #f87171; }
+
+    /* ── Status Bar ── */
+    footer {
+      background: #0c1629;
+      border-top: 1px solid #1e293b;
+      padding: 5px 16px;
+      font-size: 11px;
+      color: #475569;
+      display: flex;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    /* ── Spinner ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border: 2px solid #475569;
+      border-top-color: #94a3b8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    /* ── Pulse animation for starting ── */
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    .service-card.starting { animation: pulse 1.5s ease-in-out infinite; }
+
+    /* ── First-time Setup Overlay ── */
+    #setup-overlay {
+      position: fixed;
+      inset: 0;
+      background: #0f172a;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+    }
+    #setup-overlay.hidden { display: none; }
+
+    .setup-logo svg { width: 56px; height: 56px; }
+    .setup-title { font-size: 22px; font-weight: 700; color: #f1f5f9; }
+    .setup-sub   { font-size: 13px; color: #64748b; margin-top: -16px; }
+
+    .setup-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 28px 36px;
+      width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .setup-step-label {
+      font-size: 14px;
+      color: #94a3b8;
+    }
+    .setup-step-label strong { color: #e2e8f0; }
+
+    .progress-track {
+      height: 8px;
+      background: #334155;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #14b8a6, #2563eb);
+      border-radius: 4px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
+    .setup-hint {
+      font-size: 11px;
+      color: #475569;
+      text-align: center;
+    }
+    .setup-error {
+      color: #f87171;
+      font-size: 13px;
+      background: #450a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #334155;
+      color: #e2e8f0;
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 999;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="6" fill="#14b8a6"/>
+      <path d="M7 14h4l3-7 4 14 3-7h4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div>
+      <h1>Niladri Edu Pro</h1>
+      <div class="version">Offline Education Manager</div>
+    </div>
+  </div>
+  <div id="docker-badge">
+    <div class="dot"></div>
+    <span id="docker-label">Checking…</span>
+  </div>
+</header>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Left Panel -->
+  <div class="left">
+    <!-- Action Buttons -->
+    <div>
+      <div class="section-title">Service Control</div>
+      <div class="controls" style="margin-top:8px">
+        <button class="btn-start" id="btn-start" onclick="startServices()">
+          <span>▶</span> Start All
+        </button>
+        <button class="btn-stop" id="btn-stop" onclick="stopServices()">
+          <span>■</span> Stop All
+        </button>
+        <button class="btn-restart" id="btn-restart" onclick="restartServices()">
+          <span>↻</span> Restart All
+        </button>
+      </div>
+    </div>
+
+    <!-- Service Status -->
+    <div>
+      <div class="section-title">Service Status</div>
+      <div class="service-grid" id="service-grid" style="margin-top:8px">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+
+    <!-- Open Portal -->
+    <div>
+      <div class="section-title">Open Portal</div>
+      <div class="portal-buttons" style="margin-top:8px">
+        <button id="btn-open-portal" class="btn-portal" onclick="openSchoolPortal()" disabled>
+          🏫 Open School Portal <small style="opacity:.7">:8082</small>
+        </button>
+      </div>
+    </div>
+
+    <!-- License Status -->
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px;font-size:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-weight:600;color:#cbd5e1;">License</span>
+        <span id="license-badge" style="font-size:11px;padding:2px 8px;border-radius:12px;background:#1e3a2e;color:#4ade80;">Checking…</span>
+      </div>
+      <div id="license-info" style="color:#94a3b8;margin-bottom:8px;">–</div>
+      <button id="btn-activate-license" onclick="showLicenseModal()"
+        style="width:100%;padding:6px;background:#0f4c81;color:#93c5fd;border:1px solid #1d4ed8;border-radius:6px;cursor:pointer;font-size:12px;">
+        🔑 Activate New License Key
+      </button>
+    </div>
+
+    <!-- Backup & Settings -->
+    <div style="display:flex;gap:8px;">
+      <button onclick="backupDatabase()"
+        style="flex:1;padding:8px;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;cursor:pointer;font-size:12px;">
+        💾 Backup Database
+      </button>
+      <button onclick="toggleAutoStart()"
+        style="flex:1;padding:8px;background:#1e293b;border:1px solid #334155;border-radius:6px;cursor:pointer;font-size:12px;"
+        id="btn-autostart">
+        ⚡ Auto-start: checking…
+      </button>
+    </div>
+
+    <!-- Credentials hint -->
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px;font-size:12px;color:#94a3b8;">
+      <div style="font-weight:600;color:#cbd5e1;margin-bottom:6px;">School Admin Login</div>
+      <div>URL: <span style="color:#a78bfa">http://localhost:8082</span></div>
+      <div style="margin-top:4px;">Use the admin account created during school setup.</div>
+      <div style="margin-top:4px;font-size:11px;color:#475569;">Contact your administrator if you forgot your credentials.</div>
+    </div>
+  </div>
+
+  <!-- License Activation Modal -->
+  <div id="license-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;">
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;width:420px;max-width:90vw;">
+      <div style="font-weight:700;color:#e2e8f0;font-size:16px;margin-bottom:16px;">🔑 Activate License Key</div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Enter your school admin credentials and the license key provided by your system administrator.</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input id="lic-email" type="email" placeholder="Admin email" autocomplete="off"
+          style="padding:8px 10px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px;outline:none;" />
+        <input id="lic-password" type="password" placeholder="Admin password"
+          style="padding:8px 10px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px;outline:none;" />
+        <textarea id="lic-key" placeholder="Paste license key here…" rows="3"
+          style="padding:8px 10px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:12px;font-family:monospace;resize:vertical;outline:none;"></textarea>
+        <div id="lic-error" style="color:#f87171;font-size:12px;display:none;"></div>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button onclick="hideLicenseModal()"
+            style="flex:1;padding:8px;background:#334155;color:#94a3b8;border:none;border-radius:6px;cursor:pointer;">Cancel</button>
+          <button onclick="submitLicense()"
+            style="flex:1;padding:8px;background:#14b8a6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Activate</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Panel: Logs -->
+  <div class="right">
+    <div class="log-header">
+      <span class="section-title" style="margin-bottom:0">Live Logs</span>
+      <button class="btn-clear-log" onclick="clearLog()">Clear</button>
+    </div>
+    <div class="log-service-tabs">
+      <div class="log-tab active" data-svc="" onclick="selectLogTab(this, '')">All</div>
+      <div class="log-tab" data-svc="db" onclick="selectLogTab(this, 'db')">DB</div>
+      <div class="log-tab" data-svc="backend" onclick="selectLogTab(this, 'backend')">Backend</div>
+      <div class="log-tab" data-svc="school-portal" onclick="selectLogTab(this, 'school-portal')">School</div>
+    </div>
+    <div id="log-output"><span class="log-info">Waiting for log events…</span></div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer>
+  <span id="status-text">Initialising…</span>
+  <span id="last-check">–</span>
+</footer>
+
+<!-- First-time Setup Overlay -->
+<div id="setup-overlay">
+  <div class="setup-logo">
+    <svg viewBox="0 0 56 56" fill="none">
+      <rect width="56" height="56" rx="12" fill="#14b8a6"/>
+      <path d="M14 28h8l6-14 8 28 6-14h8" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <div class="setup-title">Niladri Edu Pro</div>
+  <div class="setup-sub">First-time Setup</div>
+
+  <div class="setup-box">
+    <div class="setup-step-label" id="setup-label">Setting up database…</div>
+    <div class="progress-track">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div id="setup-error-box" style="display:none" class="setup-error"></div>
+  </div>
+  <div class="setup-hint">This only runs once. Please wait while the database is set up.</div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+  // ── First-time Setup ─────────────────────────────────────────────────────
+  const overlay  = document.getElementById('setup-overlay');
+  const setupLbl = document.getElementById('setup-label');
+  const progBar  = document.getElementById('progress-bar');
+  const errBox   = document.getElementById('setup-error-box');
+
+  window.electronAPI.onSetupStart(({ total }) => {
+    setupLbl.innerHTML = `Setting up <strong>0 / ${total}</strong> steps…`;
+    progBar.style.width = '0%';
+    overlay.classList.remove('hidden');
+  });
+
+  window.electronAPI.onSetupStep(({ step, total, label }) => {
+    setupLbl.innerHTML = `Step <strong>${step} / ${total}</strong>: ${label}`;
+    progBar.style.width = `${Math.round((step - 1) / total * 100)}%`;
+  });
+
+  window.electronAPI.onSetupDone(() => {
+    progBar.style.width = '100%';
+    setupLbl.innerHTML = '<strong style="color:#4ade80">Setup complete!</strong>';
+    setTimeout(() => overlay.classList.add('hidden'), 800);
+  });
+
+  window.electronAPI.onSetupError((msg) => {
+    errBox.textContent = msg;
+    errBox.style.display = 'block';
+    setupLbl.textContent = 'Setup failed.';
+  });
+
+  // If no setup needed, hide overlay immediately after brief check
+  // (onSetupStart is only sent when images are missing)
+  setTimeout(() => {
+    // If setup never started (images already present), hide overlay
+    if (!overlay.classList.contains('hidden') && progBar.style.width === '0%') {
+      overlay.classList.add('hidden');
+    }
+  }, 2000);
+
+  // ── Config ────────────────────────────────────────────────────────────────
+  const SERVICE_META = {
+    'db':            { icon: '🗄', label: 'Database',      iconClass: 'db-icon',     port: 5433 },
+    'backend':       { icon: '⚙', label: 'Backend API',   iconClass: 'api-icon',    port: 8000 },
+    'school-portal': { icon: '🏫', label: 'School Portal', iconClass: 'school-icon', port: 8082 },
+  };
+
+  let busy = false;
+
+  // ── Render service cards ──────────────────────────────────────────────────
+  function renderCards(services, dockerUp) {
+    const grid = document.getElementById('service-grid');
+    grid.innerHTML = '';
+
+    for (const [key, meta] of Object.entries(SERVICE_META)) {
+      const state = services[key] || (dockerUp ? 'stopped' : 'docker-down');
+      const card = document.createElement('div');
+      card.className = `service-card ${state}`;
+      card.innerHTML = `
+        <div class="service-icon ${meta.iconClass}">${meta.icon}</div>
+        <div class="service-info">
+          <div class="service-name">${meta.label}</div>
+          <div class="service-status ${state}">${stateLabel(state)}</div>
+          <div class="service-port">port ${meta.port}</div>
+        </div>`;
+      grid.appendChild(card);
+    }
+  }
+
+  function stateLabel(state) {
+    switch (state) {
+      case 'healthy':    return '● Running';
+      case 'starting':   return '◐ Starting…';
+      case 'stopped':    return '○ Stopped';
+      case 'docker-down': return '✖ System offline';
+      default:           return state;
+    }
+  }
+
+  // ── System badge ──────────────────────────────────────────────────────────
+  function setDockerBadge(up) {
+    const badge = document.getElementById('docker-badge');
+    const label = document.getElementById('docker-label');
+    badge.className = up ? 'ok' : 'error';
+    badge.id = 'docker-badge';
+    label.textContent = up ? 'System Running' : 'System Offline';
+  }
+
+  // ── Status updates from main ──────────────────────────────────────────────
+  window.electronAPI.onStatusUpdate(({ services, dockerUp }) => {
+    renderCards(services, dockerUp);
+    setDockerBadge(dockerUp);
+
+    const healthy = Object.values(services).filter(s => s === 'healthy').length;
+    const total   = Object.keys(SERVICE_META).length;
+
+    document.getElementById('status-text').textContent = dockerUp
+      ? `${healthy}/${total} services healthy`
+      : 'System is offline';
+
+    const now = new Date();
+    document.getElementById('last-check').textContent =
+      `Last checked: ${now.toLocaleTimeString()}`;
+
+    // Enable "Open School Portal" button only when school-portal is healthy
+    const portalBtn = document.getElementById('btn-open-portal');
+    portalBtn.disabled = services['school-portal'] !== 'healthy';
+  });
+
+  // ── Log events ────────────────────────────────────────────────────────────
+  let logSvc = '';
+  window.electronAPI.onLogLine((line) => appendLog(line));
+  window.electronAPI.onDockerError((msg) => appendLog(`ERROR: ${msg}`, 'error'));
+
+  function appendLog(text, type) {
+    const el = document.getElementById('log-output');
+    const span = document.createElement('span');
+    const cls = type || classifyLog(text);
+    span.className = cls ? `log-${cls}` : '';
+    span.textContent = text + '\n';
+    el.appendChild(span);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function classifyLog(text) {
+    const t = text.toLowerCase();
+    if (t.includes('error') || t.includes('✖')) return 'error';
+    if (t.includes('warn'))                      return 'warn';
+    if (t.includes('✔') || t.includes('started')) return 'ok';
+    if (t.startsWith('▶') || t.startsWith('■') || t.startsWith('↻')) return 'info';
+    return '';
+  }
+
+  async function selectLogTab(el, svc) {
+    document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    logSvc = svc;
+
+    const log = document.getElementById('log-output');
+    log.textContent = 'Loading…';
+    const text = await window.electronAPI.getLogs(svc);
+    log.textContent = '';
+    appendLog(text || '(no logs)');
+  }
+
+  function clearLog() {
+    document.getElementById('log-output').textContent = '';
+  }
+
+  // ── Control buttons ──────────────────────────────────────────────────────
+  function setBusy(val) {
+    busy = val;
+    ['btn-start','btn-stop','btn-restart'].forEach(id => {
+      document.getElementById(id).disabled = val;
+    });
+  }
+
+  async function startServices() {
+    if (busy) return;
+    setBusy(true);
+    appendLog('▶ Starting all services…', 'info');
+    const res = await window.electronAPI.startServices();
+    if (!res.ok) { showToast(res.message, true); appendLog(res.message, 'error'); }
+    setBusy(false);
+  }
+
+  async function stopServices() {
+    if (busy) return;
+    setBusy(true);
+    appendLog('■ Stopping all services…', 'info');
+    const res = await window.electronAPI.stopServices();
+    if (!res.ok) { showToast(res.message, true); appendLog(res.message, 'error'); }
+    setBusy(false);
+  }
+
+  async function restartServices() {
+    if (busy) return;
+    setBusy(true);
+    appendLog('↻ Restarting all services…', 'info');
+    const res = await window.electronAPI.restartServices();
+    if (!res.ok) { showToast(res.message, true); appendLog(res.message, 'error'); }
+    setBusy(false);
+  }
+
+  async function openSchoolPortal() { await window.electronAPI.openSchoolPortal(); }
+
+  // ── License ───────────────────────────────────────────────────────────────
+  async function refreshLicenseStatus() {
+    const result = await window.electronAPI.getLicenseStatus();
+    const badge = document.getElementById('license-badge');
+    const info  = document.getElementById('license-info');
+    if (!result.ok || !result.data) {
+      badge.textContent = 'Unknown';
+      badge.style.background = '#2d2d2d'; badge.style.color = '#94a3b8';
+      info.textContent = 'Could not reach backend.';
+      return;
+    }
+    const d = result.data;
+    if (!d.is_licensed) {
+      badge.textContent = 'No License';
+      badge.style.background = '#3b0000'; badge.style.color = '#f87171';
+      info.textContent = 'No active license. Activate a key to use the portal.';
+    } else if (d.is_expired) {
+      badge.textContent = 'Expired';
+      badge.style.background = '#3b0000'; badge.style.color = '#f87171';
+      info.textContent = `Expired. Please activate a new license key.`;
+    } else if (d.days_remaining <= 7) {
+      badge.textContent = `Expires in ${d.days_remaining}d`;
+      badge.style.background = '#3b2000'; badge.style.color = '#fb923c';
+      info.textContent = `⚠ License expires in ${d.days_remaining} day(s). Contact your administrator.`;
+    } else {
+      badge.textContent = `Active · ${d.days_remaining}d left`;
+      badge.style.background = '#1e3a2e'; badge.style.color = '#4ade80';
+      const exp = d.license_expires_at ? new Date(d.license_expires_at).toLocaleDateString() : '–';
+      info.textContent = `Valid until ${exp}${d.school_name ? ' — ' + d.school_name : ''}`;
+    }
+  }
+
+  function showLicenseModal() {
+    document.getElementById('lic-error').style.display = 'none';
+    document.getElementById('license-modal').style.display = 'flex';
+  }
+  function hideLicenseModal() {
+    document.getElementById('license-modal').style.display = 'none';
+  }
+  async function submitLicense() {
+    const email      = document.getElementById('lic-email').value.trim();
+    const password   = document.getElementById('lic-password').value;
+    const licenseKey = document.getElementById('lic-key').value.trim();
+    const errEl      = document.getElementById('lic-error');
+    errEl.style.display = 'none';
+
+    if (!email || !password || !licenseKey) {
+      errEl.textContent = 'All fields are required.'; errEl.style.display = 'block'; return;
+    }
+    const res = await window.electronAPI.activateLicense({ email, password, licenseKey });
+    if (res.ok) {
+      hideLicenseModal();
+      showToast('License activated successfully!', false);
+      refreshLicenseStatus();
+    } else {
+      errEl.textContent = res.message || 'Activation failed.'; errEl.style.display = 'block';
+    }
+  }
+
+  // ── DB Backup ─────────────────────────────────────────────────────────────
+  async function backupDatabase() {
+    const res = await window.electronAPI.backupDatabase();
+    if (res.ok) showToast(`Backup saved: ${res.path}`, false);
+    else if (res.message !== 'Cancelled') showToast(`Backup failed: ${res.message}`, true);
+  }
+
+  // ── Auto-start ────────────────────────────────────────────────────────────
+  let autoStartEnabled = false;
+  async function initAutoStart() {
+    const res = await window.electronAPI.getAutoStart();
+    autoStartEnabled = res.enabled;
+    updateAutoStartBtn();
+  }
+  function updateAutoStartBtn() {
+    const btn = document.getElementById('btn-autostart');
+    btn.textContent = autoStartEnabled ? '⚡ Auto-start: ON' : '⚡ Auto-start: OFF';
+    btn.style.color = autoStartEnabled ? '#4ade80' : '#94a3b8';
+  }
+  async function toggleAutoStart() {
+    const res = await window.electronAPI.setAutoStart(!autoStartEnabled);
+    autoStartEnabled = res.enabled;
+    updateAutoStartBtn();
+    showToast(`Auto-start ${autoStartEnabled ? 'enabled' : 'disabled'}`, false);
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.background = isError ? '#7f1d1d' : '#334155';
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
+  }
+
+  // ── Initial render ────────────────────────────────────────────────────────
+  renderCards({}, false);
+  refreshLicenseStatus();
+  initAutoStart();
+</script>
+
+</body>
+</html>

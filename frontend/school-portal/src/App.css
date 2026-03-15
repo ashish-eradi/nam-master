@@ -1,0 +1,25 @@
+/* School Portal App Styles */
+/* Remove Vite default styles that break layout */
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Page container for consistent styling */
+.page-wrapper {
+  padding: 24px;
+  min-height: calc(100vh - 64px);
+}
+
+/* Card improvements */
+.ant-card {
+  border-radius: 12px !important;
+}
+
+/* Table improvements */
+.ant-table-wrapper {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+}

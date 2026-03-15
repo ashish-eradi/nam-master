@@ -1,0 +1,81 @@
+name: Build Desktop Installer
+
+on:
+  # Run manually from GitHub → Actions tab
+  workflow_dispatch:
+
+  # Or automatically on every push to main
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/school-portal/**'
+      - 'desktop-app/**'
+      - 'docker-compose.offline.yml'
+      - '.env.example'
+
+jobs:
+  build:
+    runs-on: windows-latest   # must be Windows for .exe + NSIS
+
+    steps:
+      # ── 1. Checkout ───────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Setup Node.js ──────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: desktop-app/package-lock.json
+
+      # ── 3. Build Docker images ────────────────────────────────────────────
+      # Docker Desktop is pre-installed on windows-latest runners
+      - name: Build backend image
+        run: docker compose -f docker-compose.offline.yml build backend
+
+      - name: Build school-portal image
+        run: docker compose -f docker-compose.offline.yml build school-portal
+
+      - name: Pull postgres:14
+        run: docker pull postgres:14
+
+      # ── 4. Save images as .tar files ──────────────────────────────────────
+      - name: Save Docker images
+        run: |
+          mkdir -p desktop-app/assets/images
+          docker save nam-master-backend      -o desktop-app/assets/images/backend.tar
+          docker save nam-master-school-portal -o desktop-app/assets/images/school-portal.tar
+          docker save postgres:14             -o desktop-app/assets/images/db.tar
+
+      # ── 5. Copy .env for bundling ─────────────────────────────────────────
+      - name: Prepare .env for bundling
+        run: |
+          if (Test-Path ".env") {
+            Copy-Item ".env" ".env.bundle"
+          } elseif (Test-Path ".env.example") {
+            Copy-Item ".env.example" ".env"
+          }
+        shell: pwsh
+
+      # ── 6. Install Electron dependencies ─────────────────────────────────
+      - name: Install desktop-app dependencies
+        working-directory: desktop-app
+        run: npm ci
+
+      # ── 7. Build the installer ────────────────────────────────────────────
+      - name: Build Windows installer
+        working-directory: desktop-app
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 8. Upload the .exe as a downloadable artifact ─────────────────────
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NAM-School-Launcher-Setup
+          path: desktop-app/dist/*.exe
+          retention-days: 30

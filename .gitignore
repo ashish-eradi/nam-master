@@ -1,0 +1,59 @@
+# Environment secrets — never commit these
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+.pytest_cache/
+coverage.xml
+*.cover
+.coverage
+test.db
+htmlcov/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker volumes / build artifacts
+postgres_data/
+uploaded_files/
+
+# Desktop app build output
+desktop-app/dist/
+desktop-app/resources/
+desktop-app/out/
+
+# Debug / dev-only scripts
+decode_token.py
+scan_endpoints.py
+scan_results.txt
+
+# Sketch / design files
+*.sketchprompt
+SketchPrompt/
