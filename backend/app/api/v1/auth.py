@@ -120,12 +120,13 @@ async def login(user: UserLogin, request: Request, db: Session = Depends(get_db)
         "token_type": "bearer",
         "user": user_profile
     })
+    is_prod = settings.ENVIRONMENT == "production"
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="lax",
-        secure=settings.ENVIRONMENT == "production",
+        samesite="none" if is_prod else "lax",
+        secure=is_prod,
         max_age=60 * 60 * 8,  # 8 hours
         path="/",
     )
@@ -133,8 +134,8 @@ async def login(user: UserLogin, request: Request, db: Session = Depends(get_db)
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        samesite="lax",
-        secure=settings.ENVIRONMENT == "production",
+        samesite="none" if is_prod else "lax",
+        secure=is_prod,
         max_age=60 * 60 * 24 * 7,  # 7 days
         path="/api/v1/auth/refresh",
     )
@@ -183,12 +184,13 @@ def refresh(request: Request, db: Session = Depends(get_db)):
 
     access_token = create_access_token(data={"sub": user.email})
     response = JSONResponse(content={"access_token": access_token, "token_type": "bearer"})
+    is_prod = settings.ENVIRONMENT == "production"
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="lax",
-        secure=settings.ENVIRONMENT == "production",
+        samesite="none" if is_prod else "lax",
+        secure=is_prod,
         max_age=60 * 60 * 8,
         path="/",
     )
