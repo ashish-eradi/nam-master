@@ -64,3 +64,4 @@ desktop-app/assets/images/*.tar
 # AI tool local configs
 .claude/
 .gemini/
+docs/
