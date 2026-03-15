@@ -17,7 +17,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /app/wheels -r requirements.txt
 FROM python:3.11-slim
 
 # Set working directory
-WORKDIR /app
+WORKDIR /
 
 
 # Install postgresql-client for wait-for-it.sh
@@ -57,4 +57,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "py
 
 # Expose port and set command
 EXPOSE 8000
-CMD ["gunicorn", "main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+CMD ["gunicorn", "app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
