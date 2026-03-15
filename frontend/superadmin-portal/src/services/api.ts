@@ -4,7 +4,7 @@ const getBaseUrl = () => {
   if (window.location.hostname.includes('cloudshell.dev')) {
     return window.location.origin.replace(/:\d+/, ':8000') + '/api/v1';
   }
-  return '/api/v1';
+  return (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/api/v1';
 };
 
 const baseQuery = fetchBaseQuery({
