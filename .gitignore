@@ -60,3 +60,7 @@ SketchPrompt/
 
 # Docker image tarballs (too large for GitHub)
 desktop-app/assets/images/*.tar
+
+# AI tool local configs
+.claude/
+.gemini/
