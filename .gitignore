@@ -57,3 +57,6 @@ scan_results.txt
 # Sketch / design files
 *.sketchprompt
 SketchPrompt/
+
+# Docker image tarballs (too large for GitHub)
+desktop-app/assets/images/*.tar
