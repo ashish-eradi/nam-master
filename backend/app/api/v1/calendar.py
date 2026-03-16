@@ -47,7 +47,7 @@ def create_calendar_event(
         raise HTTPException(status_code=400, detail="End date must be after start date")
 
     event_data = event.model_dump(exclude={'school_id'})
-    event_data['school_id'] = uuid.UUID(school_id)
+    event_data['school_id'] = school_id if isinstance(school_id, uuid.UUID) else uuid.UUID(str(school_id))
 
     db_event = CalendarEventModel(**event_data)
     db.add(db_event)
