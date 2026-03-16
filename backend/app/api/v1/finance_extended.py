@@ -528,11 +528,14 @@ def get_student_ledger(
         total_outstanding=float(total_outstanding),
         fee_structures=all_fee_structures,
         payments=[{
+            "payment_id": str(p.id),
             "id": str(p.id),
             "receipt_number": p.receipt_number,
             "payment_date": p.payment_date.isoformat(),
             "amount_paid": float(p.amount_paid),
-            "payment_mode": p.payment_mode
+            "payment_mode": p.payment_mode,
+            "transaction_id": p.transaction_id,
+            "remarks": p.remarks,
         } for p in payments]
     )
 

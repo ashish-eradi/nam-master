@@ -450,21 +450,17 @@ const FeeCollection: React.FC = () => {
             icon={<PrinterOutlined />}
             onClick={async () => {
               try {
+                // Open window immediately (before async) to avoid popup blocker
+                const printWindow = window.open('', '_blank');
                 const pdfBlob = await downloadReceipt(record.payment_id).unwrap();
                 const url = window.URL.createObjectURL(pdfBlob);
-
-                // Open PDF in new window for printing
-                const printWindow = window.open(url, '_blank');
                 if (printWindow) {
+                  printWindow.location.href = url;
                   printWindow.onload = () => {
                     printWindow.print();
+                    setTimeout(() => window.URL.revokeObjectURL(url), 3000);
                   };
                 }
-
-                // Clean up after a delay
-                setTimeout(() => {
-                  window.URL.revokeObjectURL(url);
-                }, 1000);
               } catch (error) {
                 message.error('Failed to print receipt');
               }
