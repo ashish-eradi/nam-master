@@ -9,7 +9,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'q9t02846810p'
@@ -19,37 +18,38 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    event_type_enum = sa.Enum(
-        'holiday', 'exam', 'event', 'meeting', 'workshop', 'sports', 'other',
-        name='eventtype'
-    )
-    event_type_enum.create(op.get_bind(), checkfirst=True)
+    # Create enum type safely (handles partial previous runs)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE eventtype AS ENUM (
+                'holiday', 'exam', 'event', 'meeting', 'workshop', 'sports', 'other'
+            );
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
-    op.create_table(
-        'calendar_events',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False,
-                  server_default=sa.text('gen_random_uuid()')),
-        sa.Column('school_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('title', sa.String(), nullable=False),
-        sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('event_type', sa.Enum(
-            'holiday', 'exam', 'event', 'meeting', 'workshop', 'sports', 'other',
-            name='eventtype', create_type=False
-        ), nullable=False, server_default='event'),
-        sa.Column('start_date', sa.Date(), nullable=False),
-        sa.Column('end_date', sa.Date(), nullable=False),
-        sa.Column('is_school_closed', sa.String(), nullable=True, server_default='no'),
-        sa.Column('academic_year', sa.String(), nullable=False),
-        sa.Column('color', sa.String(), nullable=True, server_default='#1890ff'),
-        sa.ForeignKeyConstraint(['school_id'], ['schools.id']),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index('ix_calendar_events_school_id', 'calendar_events', ['school_id'])
-    op.create_index('ix_calendar_events_start_date', 'calendar_events', ['start_date'])
+    # Create table safely (idempotent)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id UUID NOT NULL DEFAULT gen_random_uuid(),
+            school_id UUID NOT NULL,
+            title VARCHAR NOT NULL,
+            description TEXT,
+            event_type eventtype NOT NULL DEFAULT 'event',
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            is_school_closed VARCHAR DEFAULT 'no',
+            academic_year VARCHAR NOT NULL,
+            color VARCHAR DEFAULT '#1890ff',
+            PRIMARY KEY (id),
+            FOREIGN KEY (school_id) REFERENCES schools(id)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_calendar_events_school_id ON calendar_events (school_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_calendar_events_start_date ON calendar_events (start_date)")
 
 
 def downgrade() -> None:
-    op.drop_index('ix_calendar_events_start_date', table_name='calendar_events')
-    op.drop_index('ix_calendar_events_school_id', table_name='calendar_events')
-    op.drop_table('calendar_events')
-    sa.Enum(name='eventtype').drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TABLE IF EXISTS calendar_events")
+    op.execute("DROP TYPE IF EXISTS eventtype")
