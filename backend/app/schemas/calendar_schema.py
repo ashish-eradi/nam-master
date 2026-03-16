@@ -16,7 +16,7 @@ class CalendarEventBase(BaseModel):
 
 
 class CalendarEventCreate(CalendarEventBase):
-    school_id: str
+    school_id: Optional[str] = None  # Set server-side from auth context
 
 
 class CalendarEventUpdate(BaseModel):

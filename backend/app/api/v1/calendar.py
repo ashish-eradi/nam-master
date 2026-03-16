@@ -43,13 +43,13 @@ def create_calendar_event(
     school_id: str = Depends(get_current_user_school)
 ):
     """Create a new calendar event."""
-    if event.school_id != school_id:
-        raise HTTPException(status_code=403, detail="Cannot create event for another school")
-
     if event.end_date < event.start_date:
         raise HTTPException(status_code=400, detail="End date must be after start date")
 
-    db_event = CalendarEventModel(**event.model_dump())
+    event_data = event.model_dump(exclude={'school_id'})
+    event_data['school_id'] = uuid.UUID(school_id)
+
+    db_event = CalendarEventModel(**event_data)
     db.add(db_event)
     db.commit()
     db.refresh(db_event)

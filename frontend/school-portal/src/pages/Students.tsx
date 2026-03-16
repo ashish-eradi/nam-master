@@ -370,9 +370,9 @@ const Students: React.FC = () => {
           </Form.Item>
           <Form.Item name="gender" label="Gender" rules={[{ required: true }]}>
             <AntSelect placeholder="Select gender">
-              <Option value="MALE">Male</Option>
-              <Option value="FEMALE">Female</Option>
-              <Option value="OTHER">Other</Option>
+              <Option value="Male">Male</Option>
+              <Option value="Female">Female</Option>
+              <Option value="Other">Other</Option>
             </AntSelect>
           </Form.Item>
           <Form.Item name="blood_group" label="Blood Group">
