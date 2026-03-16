@@ -23,7 +23,7 @@ class CalendarEvent(Base):
     school_id = Column(UUID(as_uuid=True), ForeignKey("schools.id"), nullable=False)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    event_type = Column(SQLEnum(EventType), nullable=False, default=EventType.EVENT)
+    event_type = Column(SQLEnum(EventType, values_callable=lambda x: [e.value for e in x], create_type=False), nullable=False, default=EventType.EVENT)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     is_school_closed = Column(String, default="no")  # "yes" or "no"
