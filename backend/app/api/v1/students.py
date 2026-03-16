@@ -109,6 +109,11 @@ async def bulk_import_students(
     errors = []
     school_uuid = uuid.UUID(str(school_id))
 
+    # Pre-compute password hashes ONCE — argon2id is intentionally slow (~0.5s each).
+    # Reusing the same hash for bulk import avoids N * 0.5s timeout on large files.
+    default_parent_hash = hash_password("Parent@123")
+    no_access_hash = hash_password("NoAccess@123")
+
     for row_num, row in enumerate(csv_reader, start=2):
         # Use a savepoint so a per-row failure doesn't corrupt the session
         savepoint = db.begin_nested()
@@ -171,7 +176,7 @@ async def bulk_import_students(
                 if not existing_parent_user:
                     parent_user = UserModel(
                         email         = parent_email,
-                        password_hash = hash_password("Parent@123"),
+                        password_hash = default_parent_hash,
                         full_name     = f"Parent of {db_student.first_name}",
                         username      = parent_email.split('@')[0],
                         role          = "PARENT",
@@ -202,7 +207,7 @@ async def bulk_import_students(
                 placeholder_email = f"noaccess_{uuid.uuid4().hex}@placeholder.internal"
                 parent_user = UserModel(
                     email         = placeholder_email,
-                    password_hash = hash_password("NoAccess@123"),
+                    password_hash = no_access_hash,
                     full_name     = f"Parent of {db_student.first_name}",
                     username      = f"parent_{uuid.uuid4().hex[:8]}",
                     role          = "PARENT",
