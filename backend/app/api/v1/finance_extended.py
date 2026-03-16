@@ -857,17 +857,15 @@ def update_payment(
                             student_fee.outstanding_amount = student_fee.outstanding_amount + old_pd_amount - new_pd_amount
 
     db.commit()
-    db.refresh(payment)
 
-    # Return payment with details
-    payment_details = db.query(PaymentDetailModel).filter(
-        PaymentDetailModel.payment_id == payment_id
-    ).all()
+    # Re-query with relationships for Pydantic v2 model_validate
+    payment = db.query(PaymentModel).filter(
+        PaymentModel.id == payment_id
+    ).options(
+        selectinload(PaymentModel.payment_details)
+    ).first()
 
-    return PaymentWithDetails(
-        **payment.__dict__,
-        payment_details=payment_details
-    )
+    return PaymentWithDetails.model_validate(payment)
 
 
 # --- Enhanced ClassFee Endpoints ---
