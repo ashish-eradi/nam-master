@@ -865,7 +865,7 @@ def update_payment(
         selectinload(PaymentModel.payment_details)
     ).first()
 
-    return PaymentWithDetails.model_validate(payment)
+    return PaymentWithDetails.model_validate(payment, from_attributes=True)
 
 
 # --- Enhanced ClassFee Endpoints ---
