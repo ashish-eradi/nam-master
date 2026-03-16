@@ -140,13 +140,17 @@ const TimetableBuilder: React.FC = () => {
   };
 
   const handleOk = () => {
+    if (!selectedClass) {
+      message.error('Please select a class first');
+      return;
+    }
     form.validateFields().then(async (values) => {
       try {
         if (modalContext.entry) {
           await updateEntry({ id: modalContext.entry.id, body: values });
         } else {
-          await createEntry({ 
-            ...values, 
+          await createEntry({
+            ...values,
             class_id: selectedClass,
             period_id: modalContext.period.id,
             day_of_week: modalContext.day,
@@ -182,7 +186,7 @@ const TimetableBuilder: React.FC = () => {
         const subject = subjects?.find(s => s.id === entry?.subject_id);
         const teacher = teachers?.find(t => t.id === entry?.teacher_id);
         return (
-          <div onClick={() => showModal(record, index + 1, entry || null)} style={{ cursor: 'pointer', minHeight: 50 }}>
+          <div onClick={() => selectedClass && showModal(record, index + 1, entry || null)} style={{ cursor: selectedClass ? 'pointer' : 'default', minHeight: 50 }}>
             <div>{subject?.name}</div>
             <small>{teacher?.full_name || ''}</small>
           </div>
