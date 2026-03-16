@@ -268,7 +268,7 @@ class PDFReceiptService:
         pdf.setFont("Helvetica-Bold", 11)
         pdf.drawString(PDFReceiptService.MARGIN, y, "Amount in Words:")
 
-        pdf.setFont("Helvetica-Italic", 11)
+        pdf.setFont("Helvetica-Oblique", 11)
         pdf.drawString(PDFReceiptService.MARGIN + 1.5 * inch, y, amount_words)
 
         return y - 0.5 * inch

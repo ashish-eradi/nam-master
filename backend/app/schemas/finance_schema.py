@@ -90,7 +90,7 @@ class Payment(PaymentBase):
     id: uuid.UUID
     receipt_number: str
     school_id: uuid.UUID
-    received_by_user_id: uuid.UUID
+    received_by_user_id: Optional[uuid.UUID] = None
 
     class Config:
         orm_mode = True
