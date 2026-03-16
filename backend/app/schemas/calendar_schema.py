@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from datetime import date
 from typing import Optional
+import uuid
 from app.models.calendar import EventType
 
 
@@ -31,8 +32,8 @@ class CalendarEventUpdate(BaseModel):
 
 
 class CalendarEvent(CalendarEventBase):
-    id: str
-    school_id: str
+    id: uuid.UUID
+    school_id: uuid.UUID
 
     class Config:
         from_attributes = True
