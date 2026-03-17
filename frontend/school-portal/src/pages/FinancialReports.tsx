@@ -187,6 +187,13 @@ const DefaultersReport: React.FC = () => {
       key: 'class_name',
     },
     {
+      title: 'Paid',
+      dataIndex: 'total_paid',
+      key: 'total_paid',
+      render: (amount: number) => <span style={{ color: '#52c41a', fontWeight: 'bold' }}>₹{(amount || 0).toLocaleString()}</span>,
+      sorter: (a: any, b: any) => (a.total_paid || 0) - (b.total_paid || 0),
+    },
+    {
       title: 'Outstanding',
       dataIndex: 'total_outstanding',
       key: 'total_outstanding',

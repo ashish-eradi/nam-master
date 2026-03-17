@@ -146,6 +146,8 @@ def get_defaulters_report(
         Student.first_name,
         Student.last_name,
         ClassModel.name.label('class_name'),
+        func.sum(StudentFeeStructureModel.final_amount).label('school_fee_total'),
+        func.sum(StudentFeeStructureModel.amount_paid).label('school_fee_paid'),
         func.sum(StudentFeeStructureModel.outstanding_amount).label('school_fee_outstanding')
     ).join(
         StudentFeeStructureModel, Student.id == StudentFeeStructureModel.student_id
@@ -184,11 +186,15 @@ def get_defaulters_report(
     for student_data in students_with_outstanding:
         student_id = str(student_data.id)
         school_outstanding = float(student_data.school_fee_outstanding)
+        school_paid = float(student_data.school_fee_paid)
+        school_total = float(student_data.school_fee_total)
         transport_outstanding = students_with_transport.get(student_id, 0.0)
         total_outstanding = school_outstanding + transport_outstanding
 
         combined_students[student_id] = {
             'data': student_data,
+            'total_fees': school_total,
+            'total_paid': school_paid,
             'total_outstanding': total_outstanding,
             'transport_outstanding': transport_outstanding
         }
@@ -262,6 +268,8 @@ def get_defaulters_report(
             admission_number=student_data.admission_number,
             student_name=student_name,
             class_name=student_data.class_name,
+            total_fees=student_info.get('total_fees', 0),
+            total_paid=student_info.get('total_paid', 0),
             total_outstanding=float(outstanding),
             overdue_installments=overdue_count,
             oldest_due_date=oldest_due_date,
