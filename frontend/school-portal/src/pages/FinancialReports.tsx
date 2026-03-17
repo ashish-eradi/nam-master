@@ -328,9 +328,19 @@ const DefaultersReport: React.FC = () => {
               <Descriptions.Item label="Admission No.">{selectedStudent.admission_number}</Descriptions.Item>
               <Descriptions.Item label="Class">{selectedStudent.class_name}</Descriptions.Item>
               <Descriptions.Item label="Contact">{selectedStudent.parent_phone || '-'}</Descriptions.Item>
-              <Descriptions.Item label="Total Outstanding" span={2}>
+              <Descriptions.Item label="Total Fees">
+                <span style={{ fontWeight: 'bold' }}>
+                  ₹{(ledgerData?.total_expected ?? selectedStudent.total_outstanding)?.toLocaleString()}
+                </span>
+              </Descriptions.Item>
+              <Descriptions.Item label="Amount Paid">
+                <span style={{ color: '#52c41a', fontWeight: 'bold', fontSize: '16px' }}>
+                  ₹{(ledgerData?.total_paid ?? 0)?.toLocaleString()}
+                </span>
+              </Descriptions.Item>
+              <Descriptions.Item label="Balance Outstanding" span={2}>
                 <span style={{ color: '#f5222d', fontWeight: 'bold', fontSize: '16px' }}>
-                  ₹{selectedStudent.total_outstanding?.toLocaleString()}
+                  ₹{(ledgerData?.total_outstanding ?? selectedStudent.total_outstanding)?.toLocaleString()}
                 </span>
               </Descriptions.Item>
             </Descriptions>
@@ -358,14 +368,18 @@ const DefaultersReport: React.FC = () => {
                       title: 'Paid',
                       dataIndex: 'amount_paid',
                       key: 'amount_paid',
-                      render: (amount: number) => `₹${amount.toLocaleString()}`,
+                      render: (amount: number) => (
+                        <span style={{ color: '#52c41a', fontWeight: 'bold' }}>
+                          ₹{amount.toLocaleString()}
+                        </span>
+                      ),
                     },
                     {
                       title: 'Outstanding',
                       dataIndex: 'outstanding_amount',
                       key: 'outstanding_amount',
                       render: (amount: number) => (
-                        <span style={{ color: '#f5222d', fontWeight: 'bold' }}>
+                        <span style={{ color: amount > 0 ? '#f5222d' : '#52c41a', fontWeight: 'bold' }}>
                           ₹{amount.toLocaleString()}
                         </span>
                       ),
