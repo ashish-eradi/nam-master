@@ -164,13 +164,18 @@ const Students: React.FC = () => {
       // school_id is expected to be handled by the backend based on the authenticated user's school.
       // Removed client-side derivation of school_id.
 
-      if (isEdit) {
-        await updateStudent({ id: editingStudent!.id, body: values });
-      } else {
-        await createStudent(values);
+      try {
+        if (isEdit) {
+          await updateStudent({ id: editingStudent!.id, body: values }).unwrap();
+        } else {
+          await createStudent(values).unwrap();
+        }
+        setIsModalVisible(false);
+        message.success('Student saved successfully!');
+      } catch (err: unknown) {
+        const apiErr = err as { data?: { detail?: string } };
+        message.error(apiErr?.data?.detail || 'Failed to save student. Please check the form fields.');
       }
-      setIsModalVisible(false);
-      message.success('Student saved successfully!');
     }).catch(() => {
       message.error('Failed to save student. Please check the form fields.');
     });
@@ -280,9 +285,9 @@ const Students: React.FC = () => {
               value={filterGender}
               onChange={setFilterGender}
             >
-              <Option value="MALE">Male</Option>
-              <Option value="FEMALE">Female</Option>
-              <Option value="OTHER">Other</Option>
+              <Option value="Male">Male</Option>
+              <Option value="Female">Female</Option>
+              <Option value="Other">Other</Option>
             </AntSelect>
           </Col>
           <Col>
