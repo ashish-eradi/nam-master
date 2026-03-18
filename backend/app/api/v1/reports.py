@@ -37,23 +37,96 @@ def get_admin_dashboard(db: Session = Depends(get_db), school_id: str = Depends(
 
 @router.get("/attendance", dependencies=[Depends(is_admin)])
 def get_attendance_report(db: Session = Depends(get_db), school_id: str = Depends(get_current_user_school)):
-    # Placeholder for more complex report logic
-    return tenant_aware_query(db, Attendance, school_id).all()
+    rows = tenant_aware_query(db, Attendance, school_id).options(
+        joinedload(Attendance.student),
+        joinedload(Attendance.class_),
+        joinedload(Attendance.subject),
+    ).order_by(Attendance.date.desc()).all()
+    return [
+        {
+            "date": str(r.date),
+            "student_name": f"{r.student.first_name} {r.student.last_name}" if r.student else "",
+            "admission_number": r.student.admission_number if r.student else "",
+            "class": r.class_.name if r.class_ else "",
+            "subject": r.subject.name if r.subject else "",
+            "status": r.status,
+            "remarks": r.remarks or "",
+        }
+        for r in rows
+    ]
 
 @router.get("/grades", dependencies=[Depends(is_admin)])
 def get_grades_report(db: Session = Depends(get_db), school_id: str = Depends(get_current_user_school)):
-    # Placeholder for more complex report logic
-    return tenant_aware_query(db, Grade, school_id).all()
+    rows = tenant_aware_query(db, Grade, school_id).options(
+        joinedload(Grade.student),
+        joinedload(Grade.subject),
+        joinedload(Grade.assessment),
+    ).order_by(Grade.date.desc()).all()
+    return [
+        {
+            "date": str(r.date) if r.date else "",
+            "student_name": f"{r.student.first_name} {r.student.last_name}" if r.student else "",
+            "admission_number": r.student.admission_number if r.student else "",
+            "subject": r.subject.name if r.subject else "",
+            "assessment": r.assessment.name if r.assessment else "",
+            "exam_type": r.exam_type or "",
+            "score": float(r.score_achieved),
+            "grade": r.grade_letter or "",
+            "academic_year": r.academic_year or "",
+            "remarks": r.remarks or "",
+        }
+        for r in rows
+    ]
 
 @router.get("/financial", dependencies=[Depends(is_admin)])
 def get_financial_report(db: Session = Depends(get_db), school_id: str = Depends(get_current_user_school)):
-    # Placeholder for more complex report logic
-    return tenant_aware_query(db, PaymentModel, school_id).all()
+    rows = tenant_aware_query(db, PaymentModel, school_id).options(
+        joinedload(PaymentModel.student),
+        joinedload(PaymentModel.fund),
+    ).order_by(PaymentModel.payment_date.desc()).all()
+    return [
+        {
+            "date": str(r.payment_date),
+            "receipt_number": r.receipt_number,
+            "student_name": f"{r.student.first_name} {r.student.last_name}" if r.student else "",
+            "admission_number": r.student.admission_number if r.student else "",
+            "fund": r.fund.name if r.fund else "",
+            "amount_paid": float(r.amount_paid),
+            "payment_mode": r.payment_mode or "",
+            "remarks": r.remarks or "",
+        }
+        for r in rows
+    ]
 
 @router.get("/students", dependencies=[Depends(is_admin)])
 def get_student_report(db: Session = Depends(get_db), school_id: str = Depends(get_current_user_school)):
-    # Placeholder for more complex report logic
-    return tenant_aware_query(db, Student, school_id).all()
+    from app.models.parent import Parent as ParentModel, ParentStudentRelation as PSRModel
+    rows = tenant_aware_query(db, Student, school_id).options(
+        joinedload(Student.class_),
+    ).order_by(Student.first_name).all()
+    result = []
+    for s in rows:
+        psr = db.query(PSRModel).join(ParentModel, PSRModel.parent_id == ParentModel.id).filter(
+            PSRModel.student_id == s.id
+        ).first()
+        parent = psr.parent if psr else None
+        result.append({
+            "admission_number": s.admission_number,
+            "name": f"{s.first_name} {s.last_name}",
+            "class": s.class_.name if s.class_ else "",
+            "gender": s.gender.value if s.gender else "",
+            "date_of_birth": str(s.date_of_birth) if s.date_of_birth else "",
+            "blood_group": s.blood_group or "",
+            "status": s.status.value if s.status else "",
+            "academic_year": s.academic_year or "",
+            "father_name": parent.father_name if parent else "",
+            "father_phone": parent.father_phone if parent else "",
+            "mother_name": parent.mother_name if parent else "",
+            "mother_phone": parent.mother_phone if parent else "",
+            "address": s.address or "",
+            "admission_date": str(s.admission_date) if s.admission_date else "",
+        })
+    return result
 
 
 # --- Financial Reports ---
