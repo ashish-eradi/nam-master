@@ -7,7 +7,7 @@ from app.core.utils import tenant_aware_query
 from app.api.deps import get_current_user_school
 from app.models.attendance import Attendance
 from app.models.grade import Grade
-from app.models.finance import Payment as PaymentModel, Fund as FundModel, StudentFeeStructure as StudentFeeStructureModel, FeeInstallment as FeeInstallmentModel, Fee as FeeModel, PaymentDetail as PaymentDetailModel, Salary as SalaryModel
+from app.models.finance import Payment as PaymentModel, Fund as FundModel, StudentFeeStructure as StudentFeeStructureModel, FeeInstallment as FeeInstallmentModel, Fee as FeeModel, PaymentDetail as PaymentDetailModel, Salary as SalaryModel, ClassFee as ClassFeeModel
 from app.models.student import Student
 from app.models.user import User
 from app.models.class_model import Class as ClassModel
@@ -84,7 +84,9 @@ def get_collection_summary(
     for fund in funds:
         # Get fee structures for this fund's fees
         fee_structures = db.query(StudentFeeStructureModel).join(
-            FeeModel, StudentFeeStructureModel.class_fee_id == FeeModel.id
+            ClassFeeModel, StudentFeeStructureModel.class_fee_id == ClassFeeModel.id
+        ).join(
+            FeeModel, ClassFeeModel.fee_id == FeeModel.id
         ).filter(
             FeeModel.fund_id == fund.id,
             StudentFeeStructureModel.academic_year == academic_year
@@ -531,7 +533,7 @@ def get_daily_expenditure(
         SalaryModel.school_id == school_id
     ).all()
 
-    total_amount = sum(Decimal(str(s.net_salary)) for s in salaries)
+    total_amount = sum(Decimal(str(s.net_salary or 0)) for s in salaries)
     total_payments = len(salaries)
 
     # Group by payment mode
@@ -540,7 +542,7 @@ def get_daily_expenditure(
         mode = salary.payment_mode or 'Unknown'
         if mode not in by_mode:
             by_mode[mode] = 0
-        by_mode[mode] += float(salary.net_salary)
+        by_mode[mode] += float(salary.net_salary or 0)
 
     # Create salary details list
     salary_details = []
@@ -552,7 +554,7 @@ def get_daily_expenditure(
         salary_details.append(DailyExpenditureItem(
             teacher_name=teacher_name,
             employee_id=employee_id,
-            amount=float(salary.net_salary),
+            amount=float(salary.net_salary or 0),
             payment_mode=salary.payment_mode or 'Unknown',
             month=salary.month or 'N/A'
         ))
