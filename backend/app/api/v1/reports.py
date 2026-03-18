@@ -48,7 +48,7 @@ def get_grades_report(db: Session = Depends(get_db), school_id: str = Depends(ge
 @router.get("/financial", dependencies=[Depends(is_admin)])
 def get_financial_report(db: Session = Depends(get_db), school_id: str = Depends(get_current_user_school)):
     # Placeholder for more complex report logic
-    return tenant_aware_query(db, Payment, school_id).all()
+    return tenant_aware_query(db, PaymentModel, school_id).all()
 
 @router.get("/students", dependencies=[Depends(is_admin)])
 def get_student_report(db: Session = Depends(get_db), school_id: str = Depends(get_current_user_school)):

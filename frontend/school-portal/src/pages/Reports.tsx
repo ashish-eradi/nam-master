@@ -22,7 +22,12 @@ const { Option } = Select;
 const { RangePicker } = DatePicker;
 const { TabPane } = Tabs;
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/api/v1';
+const getApiBaseUrl = () => {
+  if (window.location.hostname.includes('cloudshell.dev')) {
+    return window.location.origin + '/api/v1';
+  }
+  return (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/api/v1';
+};
 
 const Reports: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<string | undefined>(undefined);
@@ -38,12 +43,27 @@ const Reports: React.FC = () => {
     classId: selectedClass,
   });
 
-  const handleDownload = (url: string, reportName: string) => {
-    message.loading(`Generating ${reportName}...`, 1);
-    setTimeout(() => {
-      window.open(url, '_blank');
-      message.success(`${reportName} download started`);
-    }, 1000);
+  const handleDownload = async (path: string, reportName: string) => {
+    const url = `${getApiBaseUrl()}${path}`;
+    const msgKey = 'download';
+    message.loading({ content: `Generating ${reportName}...`, key: msgKey });
+    try {
+      const response = await fetch(url, { credentials: 'include' });
+      if (!response.ok) throw new Error(`Server error ${response.status}`);
+      const data = await response.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${reportName.replace(/\s+/g, '_').toLowerCase()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+      message.success({ content: `${reportName} downloaded`, key: msgKey });
+    } catch {
+      message.error({ content: `Failed to download ${reportName}. Please try again.`, key: msgKey });
+    }
   };
 
   const reportCards = [
@@ -51,7 +71,7 @@ const Reports: React.FC = () => {
       title: 'Attendance Report',
       description: 'Daily and monthly attendance summary',
       icon: <CheckCircleOutlined style={{ fontSize: 32, color: '#52c41a' }} />,
-      url: `${API_BASE_URL}/reports/attendance`,
+      url: '/reports/attendance',
       color: '#f6ffed',
       borderColor: '#b7eb8f',
     },
@@ -59,7 +79,7 @@ const Reports: React.FC = () => {
       title: 'Grades Report',
       description: 'Student grades and assessment results',
       icon: <BarChartOutlined style={{ fontSize: 32, color: '#1890ff' }} />,
-      url: `${API_BASE_URL}/reports/grades`,
+      url: '/reports/grades',
       color: '#e6f7ff',
       borderColor: '#91d5ff',
     },
@@ -67,7 +87,7 @@ const Reports: React.FC = () => {
       title: 'Financial Report',
       description: 'Fee collection and payment summary',
       icon: <DollarOutlined style={{ fontSize: 32, color: '#faad14' }} />,
-      url: `${API_BASE_URL}/reports/financial`,
+      url: '/reports/financial',
       color: '#fffbe6',
       borderColor: '#ffe58f',
     },
@@ -75,7 +95,7 @@ const Reports: React.FC = () => {
       title: 'Students Report',
       description: 'Complete student list and details',
       icon: <TeamOutlined style={{ fontSize: 32, color: '#722ed1' }} />,
-      url: `${API_BASE_URL}/reports/students`,
+      url: '/reports/students',
       color: '#f9f0ff',
       borderColor: '#d3adf7',
     },
