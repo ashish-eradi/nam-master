@@ -474,24 +474,27 @@ def get_student_ledger(
     from app.models.audit_log import AuditLog
     payment_ids = [str(p.id) for p in payments]
     audit_logs_map: dict = {}
-    if payment_ids:
-        logs = db.query(AuditLog, User).join(
-            User, AuditLog.user_id == User.id, isouter=True
-        ).filter(
-            AuditLog.resource_type == "Payment",
-            AuditLog.resource_id.in_(payment_ids)
-        ).order_by(AuditLog.created_at.asc()).all()
-        for log, editor in logs:
-            pid = log.resource_id
-            if pid not in audit_logs_map:
-                audit_logs_map[pid] = []
-            audit_logs_map[pid].append({
-                "edited_at": log.created_at.isoformat(),
-                "edited_by": editor.full_name if editor else "Unknown",
-                "edit_reason": log.description or "",
-                "old_value": log.old_value,
-                "new_value": log.new_value,
-            })
+    try:
+        if payment_ids:
+            logs = db.query(AuditLog, User).join(
+                User, AuditLog.user_id == User.id, isouter=True
+            ).filter(
+                AuditLog.resource_type == "Payment",
+                AuditLog.resource_id.in_(payment_ids)
+            ).order_by(AuditLog.created_at.asc()).all()
+            for log, editor in logs:
+                pid = log.resource_id
+                if pid not in audit_logs_map:
+                    audit_logs_map[pid] = []
+                audit_logs_map[pid].append({
+                    "edited_at": log.created_at.isoformat(),
+                    "edited_by": editor.full_name if editor else "Unknown",
+                    "edit_reason": log.description or "",
+                    "old_value": log.old_value,
+                    "new_value": log.new_value,
+                })
+    except Exception:
+        pass  # audit_logs table may not exist yet; edit history is non-critical
 
     # Calculate totals (including transport + hostel fees)
     total_expected = (sum(fs.final_amount for fs in fee_structures) +
@@ -893,28 +896,31 @@ def update_payment(
 
     db.commit()
 
-    # Write audit log entry
-    from app.models.audit_log import AuditLog
-    new_snapshot = {
-        "payment_date": payment.payment_date.isoformat() if payment.payment_date else None,
-        "amount_paid": float(payment.amount_paid),
-        "payment_mode": payment.payment_mode,
-        "transaction_id": payment.transaction_id,
-        "remarks": payment.remarks,
-    }
-    audit_entry = AuditLog(
-        school_id=payment.school_id,
-        user_id=current_user.id,
-        action="UPDATE",
-        resource_type="Payment",
-        resource_id=str(payment_id),
-        old_value=old_snapshot,
-        new_value=new_snapshot,
-        description=payment_update.edit_reason,
-        status="SUCCESS",
-    )
-    db.add(audit_entry)
-    db.commit()
+    # Write audit log entry (non-critical — don't fail if audit_logs table doesn't exist)
+    try:
+        from app.models.audit_log import AuditLog
+        new_snapshot = {
+            "payment_date": payment.payment_date.isoformat() if payment.payment_date else None,
+            "amount_paid": float(payment.amount_paid),
+            "payment_mode": payment.payment_mode,
+            "transaction_id": payment.transaction_id,
+            "remarks": payment.remarks,
+        }
+        audit_entry = AuditLog(
+            school_id=payment.school_id,
+            user_id=current_user.id,
+            action="UPDATE",
+            resource_type="Payment",
+            resource_id=str(payment_id),
+            old_value=old_snapshot,
+            new_value=new_snapshot,
+            description=payment_update.edit_reason,
+            status="SUCCESS",
+        )
+        db.add(audit_entry)
+        db.commit()
+    except Exception:
+        db.rollback()
 
     # Re-query with relationships for Pydantic v2 model_validate
     payment = db.query(PaymentModel).filter(
