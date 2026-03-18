@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Card, Row, Col, Button, Table, Descriptions, Tag, Form, InputNumber, Select, DatePicker, Input, Modal, message, Space, Divider, AutoComplete } from 'antd';
-import { SearchOutlined, DollarOutlined, DownloadOutlined, AlertOutlined, TeamOutlined, PrinterOutlined, EditOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Button, Table, Descriptions, Tag, Form, InputNumber, Select, DatePicker, Input, Modal, message, Space, Divider, AutoComplete, Tooltip, Typography } from 'antd';
+import { SearchOutlined, DollarOutlined, DownloadOutlined, AlertOutlined, TeamOutlined, PrinterOutlined, EditOutlined, UserOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
 import {
   useLazySearchStudentsQuery,
@@ -307,6 +307,7 @@ const FeeCollection: React.FC = () => {
       payment_mode: payment.payment_mode,
       transaction_id: payment.transaction_id,
       remarks: payment.remarks,
+      edit_reason: '',
     });
     setIsEditModalVisible(true);
   };
@@ -329,6 +330,7 @@ const FeeCollection: React.FC = () => {
         payment_mode: values.payment_mode,
         transaction_id: values.transaction_id,
         remarks: values.remarks,
+        edit_reason: values.edit_reason,
       };
 
       await updatePayment({
@@ -413,6 +415,19 @@ const FeeCollection: React.FC = () => {
       dataIndex: 'payment_mode',
       key: 'payment_mode',
       render: (mode: string) => <Tag>{mode}</Tag>,
+    },
+    {
+      title: 'Recorded By',
+      dataIndex: 'received_by_name',
+      key: 'received_by_name',
+      render: (name: string, record: any) => (
+        <Tooltip title={record.recorded_at ? `on ${moment(record.recorded_at).format('DD MMM YYYY, hh:mm A')}` : ''}>
+          <Space size={4}>
+            <UserOutlined style={{ color: '#1890ff' }} />
+            <span>{name || 'Unknown'}</span>
+          </Space>
+        </Tooltip>
+      ),
     },
     {
       title: 'Action',
@@ -667,6 +682,36 @@ const FeeCollection: React.FC = () => {
                     pagination={{ pageSize: 5 }}
                     size="small"
                     rowKey="payment_id"
+                    expandable={{
+                      rowExpandable: (record: any) => record.edit_history && record.edit_history.length > 0,
+                      expandedRowRender: (record: any) => (
+                        <div style={{ padding: '8px 16px', background: '#fffbe6', borderRadius: 4 }}>
+                          <Space style={{ marginBottom: 8 }}>
+                            <HistoryOutlined style={{ color: '#faad14' }} />
+                            <strong>Edit History</strong>
+                          </Space>
+                          {record.edit_history.map((h: any, idx: number) => (
+                            <div key={idx} style={{ marginBottom: 8, paddingLeft: 16, borderLeft: '3px solid #faad14' }}>
+                              <div>
+                                <strong>{h.edited_by}</strong> edited on{' '}
+                                <strong>{moment(h.edited_at).format('DD MMM YYYY, hh:mm A')}</strong>
+                              </div>
+                              <div style={{ color: '#d46b08' }}>
+                                <strong>Reason:</strong> {h.edit_reason}
+                              </div>
+                              {h.old_value && (
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  {Object.keys(h.new_value || {})
+                                    .filter(k => h.old_value[k] !== h.new_value[k])
+                                    .map(k => `${k}: ${h.old_value[k]} → ${h.new_value[k]}`)
+                                    .join(' | ')}
+                                </Typography.Text>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ),
+                    }}
                   />
                 </Card>
               </>
@@ -859,8 +904,20 @@ const FeeCollection: React.FC = () => {
             <Input.TextArea rows={2} placeholder="Optional notes about this correction" />
           </Form.Item>
 
+          <Form.Item
+            name="edit_reason"
+            label="Reason for Edit"
+            rules={[{ required: true, message: 'Please provide a reason for editing this payment' }, { min: 3, message: 'Reason must be at least 3 characters' }]}
+          >
+            <Input.TextArea
+              rows={2}
+              placeholder="e.g. Incorrect amount entered, wrong payment mode, data entry error..."
+              style={{ borderColor: '#faad14' }}
+            />
+          </Form.Item>
+
           <div style={{ padding: '12px', backgroundColor: '#fff7e6', borderRadius: '4px', marginTop: '8px' }}>
-            <strong>Note:</strong> Editing this payment will recalculate fee allocations proportionally based on the new amount.
+            <strong>Note:</strong> Editing this payment will recalculate fee allocations proportionally. The reason and editor details will be saved in the audit log.
           </div>
         </Form>
       </Modal>

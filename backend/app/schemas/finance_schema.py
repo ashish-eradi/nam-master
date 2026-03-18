@@ -85,6 +85,7 @@ class PaymentUpdate(BaseModel):
     payment_mode: Optional[str] = None
     transaction_id: Optional[str] = None
     remarks: Optional[str] = None
+    edit_reason: str = Field(..., min_length=3, description="Reason for editing this payment")
 
 class Payment(PaymentBase):
     id: uuid.UUID

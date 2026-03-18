@@ -466,8 +466,32 @@ def get_student_ledger(
     payments = db.query(PaymentModel).filter(
         PaymentModel.student_id == student_id
     ).options(
-        selectinload(PaymentModel.payment_details)
+        selectinload(PaymentModel.payment_details),
+        selectinload(PaymentModel.received_by),
     ).order_by(PaymentModel.payment_date.desc()).all()
+
+    # Get edit history for all payments in one query
+    from app.models.audit_log import AuditLog
+    payment_ids = [str(p.id) for p in payments]
+    audit_logs_map: dict = {}
+    if payment_ids:
+        logs = db.query(AuditLog, User).join(
+            User, AuditLog.user_id == User.id, isouter=True
+        ).filter(
+            AuditLog.resource_type == "Payment",
+            AuditLog.resource_id.in_(payment_ids)
+        ).order_by(AuditLog.created_at.asc()).all()
+        for log, editor in logs:
+            pid = log.resource_id
+            if pid not in audit_logs_map:
+                audit_logs_map[pid] = []
+            audit_logs_map[pid].append({
+                "edited_at": log.created_at.isoformat(),
+                "edited_by": editor.full_name if editor else "Unknown",
+                "edit_reason": log.description or "",
+                "old_value": log.old_value,
+                "new_value": log.new_value,
+            })
 
     # Calculate totals (including transport + hostel fees)
     total_expected = (sum(fs.final_amount for fs in fee_structures) +
@@ -536,6 +560,9 @@ def get_student_ledger(
             "payment_mode": p.payment_mode,
             "transaction_id": p.transaction_id,
             "remarks": p.remarks,
+            "received_by_name": p.received_by.full_name if p.received_by else "Unknown",
+            "recorded_at": p.created_at.isoformat() if p.created_at else None,
+            "edit_history": audit_logs_map.get(str(p.id), []),
         } for p in payments]
     )
 
@@ -799,7 +826,8 @@ def update_payment(
     payment_id: uuid.UUID,
     payment_update: PaymentUpdate,
     db: Session = Depends(get_db),
-    school_id: str = Depends(get_current_user_school)
+    school_id: str = Depends(get_current_user_school),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update/correct a payment record.
@@ -814,11 +842,18 @@ def update_payment(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    # Store old amount for recalculation if needed
+    # Capture old values for audit log
     old_amount = payment.amount_paid
+    old_snapshot = {
+        "payment_date": payment.payment_date.isoformat() if payment.payment_date else None,
+        "amount_paid": float(payment.amount_paid),
+        "payment_mode": payment.payment_mode,
+        "transaction_id": payment.transaction_id,
+        "remarks": payment.remarks,
+    }
 
-    # Update fields
-    update_data = payment_update.model_dump(exclude_unset=True)
+    # Update fields (exclude edit_reason — not a Payment column)
+    update_data = payment_update.model_dump(exclude_unset=True, exclude={"edit_reason"})
     for key, value in update_data.items():
         setattr(payment, key, value)
 
@@ -856,6 +891,29 @@ def update_payment(
                             student_fee.amount_paid = student_fee.amount_paid - old_pd_amount + new_pd_amount
                             student_fee.outstanding_amount = student_fee.outstanding_amount + old_pd_amount - new_pd_amount
 
+    db.commit()
+
+    # Write audit log entry
+    from app.models.audit_log import AuditLog
+    new_snapshot = {
+        "payment_date": payment.payment_date.isoformat() if payment.payment_date else None,
+        "amount_paid": float(payment.amount_paid),
+        "payment_mode": payment.payment_mode,
+        "transaction_id": payment.transaction_id,
+        "remarks": payment.remarks,
+    }
+    audit_entry = AuditLog(
+        school_id=payment.school_id,
+        user_id=current_user.id,
+        action="UPDATE",
+        resource_type="Payment",
+        resource_id=str(payment_id),
+        old_value=old_snapshot,
+        new_value=new_snapshot,
+        description=payment_update.edit_reason,
+        status="SUCCESS",
+    )
+    db.add(audit_entry)
     db.commit()
 
     # Re-query with relationships for Pydantic v2 model_validate
