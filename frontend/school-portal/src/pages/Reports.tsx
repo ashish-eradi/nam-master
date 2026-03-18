@@ -43,6 +43,21 @@ const Reports: React.FC = () => {
     classId: selectedClass,
   });
 
+  const toCSV = (data: unknown): string => {
+    const rows = Array.isArray(data) ? data : [data];
+    if (rows.length === 0) return '';
+    const headers = Object.keys(rows[0] as object);
+    const escape = (val: unknown) => {
+      const str = val === null || val === undefined ? '' : String(val);
+      return str.includes(',') || str.includes('"') || str.includes('\n')
+        ? `"${str.replace(/"/g, '""')}"` : str;
+    };
+    return [
+      headers.join(','),
+      ...rows.map((row) => headers.map((h) => escape((row as Record<string, unknown>)[h])).join(',')),
+    ].join('\n');
+  };
+
   const handleDownload = async (path: string, reportName: string) => {
     const url = `${getApiBaseUrl()}${path}`;
     const msgKey = 'download';
@@ -51,11 +66,12 @@ const Reports: React.FC = () => {
       const response = await fetch(url, { credentials: 'include' });
       if (!response.ok) throw new Error(`Server error ${response.status}`);
       const data = await response.json();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const csv = toCSV(data);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `${reportName.replace(/\s+/g, '_').toLowerCase()}.json`;
+      a.download = `${reportName.replace(/\s+/g, '_').toLowerCase()}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
