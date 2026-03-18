@@ -438,7 +438,7 @@ def get_daily_collection(
     # Group by fund
     by_fund_dict = {}
     for payment in payments:
-        fund_name = payment.fund.name
+        fund_name = payment.fund.name if payment.fund else 'Unknown'
         if fund_name not in by_fund_dict:
             by_fund_dict[fund_name] = {'amount': Decimal('0'), 'count': 0}
         by_fund_dict[fund_name]['amount'] += Decimal(str(payment.amount_paid))
@@ -525,7 +525,7 @@ def get_daily_expenditure(
     """Get expenditure summary for a specific date (salaries paid on that date)."""
     # Get all salaries paid on the specified date
     salaries = db.query(SalaryModel).options(
-        joinedload(SalaryModel.teacher)
+        joinedload(SalaryModel.teacher).joinedload(TeacherModel.user)
     ).filter(
         SalaryModel.payment_date == expenditure_date,
         SalaryModel.school_id == school_id
@@ -546,7 +546,7 @@ def get_daily_expenditure(
     salary_details = []
     for salary in salaries:
         teacher = salary.teacher
-        teacher_name = f"{teacher.first_name} {teacher.last_name}" if teacher else "Unknown"
+        teacher_name = teacher.user.full_name if teacher and teacher.user else "Unknown"
         employee_id = teacher.employee_id if teacher else None
 
         salary_details.append(DailyExpenditureItem(

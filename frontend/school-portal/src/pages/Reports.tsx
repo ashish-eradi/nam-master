@@ -22,6 +22,8 @@ const { Option } = Select;
 const { RangePicker } = DatePicker;
 const { TabPane } = Tabs;
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/api/v1';
+
 const Reports: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<string | undefined>(undefined);
   const [selectedMonth, setSelectedMonth] = useState<Moment>(moment());
@@ -49,7 +51,7 @@ const Reports: React.FC = () => {
       title: 'Attendance Report',
       description: 'Daily and monthly attendance summary',
       icon: <CheckCircleOutlined style={{ fontSize: 32, color: '#52c41a' }} />,
-      url: '/api/v1/reports/attendance',
+      url: `${API_BASE_URL}/reports/attendance`,
       color: '#f6ffed',
       borderColor: '#b7eb8f',
     },
@@ -57,7 +59,7 @@ const Reports: React.FC = () => {
       title: 'Grades Report',
       description: 'Student grades and assessment results',
       icon: <BarChartOutlined style={{ fontSize: 32, color: '#1890ff' }} />,
-      url: '/api/v1/reports/grades',
+      url: `${API_BASE_URL}/reports/grades`,
       color: '#e6f7ff',
       borderColor: '#91d5ff',
     },
@@ -65,7 +67,7 @@ const Reports: React.FC = () => {
       title: 'Financial Report',
       description: 'Fee collection and payment summary',
       icon: <DollarOutlined style={{ fontSize: 32, color: '#faad14' }} />,
-      url: '/api/v1/reports/financial',
+      url: `${API_BASE_URL}/reports/financial`,
       color: '#fffbe6',
       borderColor: '#ffe58f',
     },
@@ -73,7 +75,7 @@ const Reports: React.FC = () => {
       title: 'Students Report',
       description: 'Complete student list and details',
       icon: <TeamOutlined style={{ fontSize: 32, color: '#722ed1' }} />,
-      url: '/api/v1/reports/students',
+      url: `${API_BASE_URL}/reports/students`,
       color: '#f9f0ff',
       borderColor: '#d3adf7',
     },
