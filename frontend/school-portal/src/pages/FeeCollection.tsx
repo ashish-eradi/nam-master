@@ -684,33 +684,66 @@ const FeeCollection: React.FC = () => {
                     rowKey="payment_id"
                     expandable={{
                       rowExpandable: (record: any) => record.edit_history && record.edit_history.length > 0,
-                      expandedRowRender: (record: any) => (
-                        <div style={{ padding: '8px 16px', background: '#fffbe6', borderRadius: 4 }}>
-                          <Space style={{ marginBottom: 8 }}>
-                            <HistoryOutlined style={{ color: '#faad14' }} />
-                            <strong>Edit History</strong>
-                          </Space>
-                          {record.edit_history.map((h: any, idx: number) => (
-                            <div key={idx} style={{ marginBottom: 8, paddingLeft: 16, borderLeft: '3px solid #faad14' }}>
-                              <div>
-                                <strong>{h.edited_by}</strong> edited on{' '}
-                                <strong>{moment(h.edited_at).format('DD MMM YYYY, hh:mm A')}</strong>
-                              </div>
-                              <div style={{ color: '#d46b08' }}>
-                                <strong>Reason:</strong> {h.edit_reason}
-                              </div>
-                              {h.old_value && (
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  {Object.keys(h.new_value || {})
-                                    .filter(k => h.old_value[k] !== h.new_value[k])
-                                    .map(k => `${k}: ${h.old_value[k]} → ${h.new_value[k]}`)
-                                    .join(' | ')}
-                                </Typography.Text>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ),
+                      expandedRowRender: (record: any) => {
+                        const fieldLabel: Record<string, string> = {
+                          amount_paid: 'Amount',
+                          payment_mode: 'Payment Mode',
+                          payment_date: 'Payment Date',
+                          transaction_id: 'Transaction ID',
+                          remarks: 'Remarks',
+                        };
+                        const formatVal = (key: string, val: any) => {
+                          if (val === null || val === undefined || val === '') return '—';
+                          if (key === 'amount_paid') return `₹${Number(val).toFixed(2)}`;
+                          if (key === 'payment_date') return moment(val).format('DD MMM YYYY');
+                          return String(val);
+                        };
+                        return (
+                          <div style={{ padding: '8px 16px', background: '#fffbe6', borderRadius: 4 }}>
+                            <Space style={{ marginBottom: 10 }}>
+                              <HistoryOutlined style={{ color: '#faad14' }} />
+                              <strong>Edit History ({record.edit_history.length} edit{record.edit_history.length > 1 ? 's' : ''})</strong>
+                            </Space>
+                            {record.edit_history.map((h: any, idx: number) => {
+                              const changedFields = Object.keys(h.new_value || {}).filter(
+                                k => String(h.old_value?.[k]) !== String(h.new_value?.[k])
+                              );
+                              return (
+                                <div key={idx} style={{ marginBottom: 12, paddingLeft: 12, borderLeft: '3px solid #faad14' }}>
+                                  <div style={{ marginBottom: 4 }}>
+                                    <strong>{h.edited_by}</strong>
+                                    <span style={{ color: '#666', marginLeft: 8 }}>
+                                      {moment(h.edited_at).format('DD MMM YYYY, hh:mm A')}
+                                    </span>
+                                    <span style={{ marginLeft: 8, color: '#999', fontSize: 12 }}>
+                                      (Edit #{idx + 1})
+                                    </span>
+                                  </div>
+                                  <div style={{ color: '#d46b08', marginBottom: 6 }}>
+                                    <strong>Reason:</strong> {h.edit_reason}
+                                  </div>
+                                  {changedFields.length > 0 && (
+                                    <div style={{ background: '#fff', borderRadius: 4, padding: '6px 10px', display: 'inline-block' }}>
+                                      {changedFields.map(k => (
+                                        <div key={k} style={{ fontSize: 13, marginBottom: 2 }}>
+                                          <span style={{ color: '#666' }}>{fieldLabel[k] || k}:</span>{' '}
+                                          <span style={{ color: '#cf1322', textDecoration: 'line-through' }}>
+                                            {formatVal(k, h.old_value?.[k])}
+                                          </span>
+                                          {' → '}
+                                          <span style={{ color: '#389e0d', fontWeight: 600 }}>
+                                            {formatVal(k, h.new_value?.[k])}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      },
                     }}
                   />
                 </Card>
