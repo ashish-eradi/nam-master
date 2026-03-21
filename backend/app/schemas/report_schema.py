@@ -33,6 +33,7 @@ class DefaulterStudent(BaseModel):
     oldest_due_date: Optional[date] = None
     contact_phone: Optional[str] = None
     parent_phone: Optional[str] = None
+    father_name: Optional[str] = None
 
 class DefaultersReport(BaseModel):
     academic_year: str

@@ -331,9 +331,11 @@ def get_defaulters_report(
 
         contact_phone = None
         parent_phone = None
+        father_name = None
         if parent_relation and parent_relation.parent:
             contact_phone = parent_relation.parent.father_phone
             parent_phone = parent_relation.parent.mother_phone or parent_relation.parent.father_phone
+            father_name = parent_relation.parent.father_name
 
         student_name = f"{student_data.first_name} {student_data.last_name}"
         outstanding = Decimal(str(total_outstanding))
@@ -349,7 +351,8 @@ def get_defaulters_report(
             overdue_installments=overdue_count,
             oldest_due_date=oldest_due_date,
             contact_phone=contact_phone,
-            parent_phone=parent_phone
+            parent_phone=parent_phone,
+            father_name=father_name
         ))
 
         total_outstanding_sum += outstanding

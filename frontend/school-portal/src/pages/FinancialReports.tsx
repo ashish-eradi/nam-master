@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tabs, Card, Table, DatePicker, Select, Button, Row, Col, Statistic, Tag, Space, Modal, Descriptions } from 'antd';
-import { DollarOutlined, UserOutlined, BarChartOutlined, CalendarOutlined } from '@ant-design/icons';
+import { DollarOutlined, UserOutlined, BarChartOutlined, CalendarOutlined, PrinterOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import {
   useGetCollectionSummaryQuery,
@@ -213,12 +213,75 @@ const DefaultersReport: React.FC = () => {
       render: (date: string) => date ? moment(date).format('DD MMM YYYY') : '-',
     },
     {
+      title: 'Father Name',
+      dataIndex: 'father_name',
+      key: 'father_name',
+      render: (name: string) => name || '-',
+    },
+    {
       title: 'Contact',
       dataIndex: 'parent_phone',
       key: 'parent_phone',
       render: (phone: string) => phone || '-',
     },
   ];
+
+  const handleDownloadCSV = () => {
+    if (!data?.students?.length) return;
+    const headers = ['Admission No.', 'Student Name', 'Father Name', 'Class', 'Total Paid', 'Outstanding', 'Overdue Installments', 'Oldest Due Date', 'Contact'];
+    const rows = data.students.map((s: any) => [
+      s.admission_number,
+      s.student_name,
+      s.father_name || '',
+      s.class_name,
+      s.total_paid || 0,
+      s.total_outstanding,
+      s.overdue_installments,
+      s.oldest_due_date || '',
+      s.parent_phone || '',
+    ]);
+    const csv = [headers, ...rows].map(row => row.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fee-dues-${academicYear}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrint = () => {
+    if (!data?.students?.length) return;
+    const rows = data.students.map((s: any) => `
+      <tr>
+        <td>${s.admission_number}</td>
+        <td>${s.student_name}</td>
+        <td>${s.father_name || '-'}</td>
+        <td>${s.class_name}</td>
+        <td>₹${(s.total_paid || 0).toLocaleString()}</td>
+        <td>₹${s.total_outstanding.toLocaleString()}</td>
+        <td>${s.overdue_installments}</td>
+        <td>${s.oldest_due_date || '-'}</td>
+        <td>${s.parent_phone || '-'}</td>
+      </tr>`).join('');
+    const html = `<html><head><title>Fee Dues - ${academicYear}</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; }
+        h2 { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        th { background: #f0f0f0; font-weight: bold; }
+      </style></head><body>
+      <h2>Fee Dues Report — ${academicYear}</h2>
+      <p>Total Students: ${data.total_defaulters} &nbsp;|&nbsp; Total Outstanding: ₹${data.total_outstanding.toLocaleString()}</p>
+      <table><thead><tr>
+        <th>Admission No.</th><th>Student Name</th><th>Father Name</th><th>Class</th>
+        <th>Paid</th><th>Outstanding</th><th>Overdue</th><th>Oldest Due</th><th>Contact</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); w.print(); }
+  };
 
   return (
     <div>
@@ -299,6 +362,10 @@ const DefaultersReport: React.FC = () => {
           </Row>
 
           <Card>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12, gap: 8 }}>
+              <Button icon={<PrinterOutlined />} onClick={handlePrint}>Print</Button>
+              <Button icon={<DownloadOutlined />} type="primary" onClick={handleDownloadCSV}>Download CSV</Button>
+            </div>
             <Table
               dataSource={data.students}
               columns={columns}
