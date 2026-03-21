@@ -182,6 +182,12 @@ const DefaultersReport: React.FC = () => {
       key: 'student_name',
     },
     {
+      title: 'Father Name',
+      dataIndex: 'father_name',
+      key: 'father_name',
+      render: (name: string) => name || '-',
+    },
+    {
       title: 'Class',
       dataIndex: 'class_name',
       key: 'class_name',
@@ -211,12 +217,6 @@ const DefaultersReport: React.FC = () => {
       dataIndex: 'oldest_due_date',
       key: 'oldest_due_date',
       render: (date: string) => date ? moment(date).format('DD MMM YYYY') : '-',
-    },
-    {
-      title: 'Father Name',
-      dataIndex: 'father_name',
-      key: 'father_name',
-      render: (name: string) => name || '-',
     },
     {
       title: 'Contact',

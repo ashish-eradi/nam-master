@@ -323,8 +323,9 @@ def get_defaulters_report(
 
         # Get parent contact information
         from app.models.parent import Parent as ParentModel, ParentStudentRelation as ParentStudentRelationModel
-        parent_relation = db.query(ParentStudentRelationModel).join(
-            ParentModel, ParentStudentRelationModel.parent_id == ParentModel.id
+        from sqlalchemy.orm import joinedload as _joinedload
+        parent_relation = db.query(ParentStudentRelationModel).options(
+            _joinedload(ParentStudentRelationModel.parent)
         ).filter(
             ParentStudentRelationModel.student_id == student_data.id
         ).first()
