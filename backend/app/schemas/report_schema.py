@@ -34,6 +34,9 @@ class DefaulterStudent(BaseModel):
     contact_phone: Optional[str] = None
     parent_phone: Optional[str] = None
     father_name: Optional[str] = None
+    route_name: Optional[str] = None
+    transport_outstanding: float = 0
+    school_outstanding: float = 0
 
 class DefaultersReport(BaseModel):
     academic_year: str

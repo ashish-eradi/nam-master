@@ -242,7 +242,9 @@ def get_defaulters_report(
 
     # If including transport fees, also query transport outstanding
     students_with_transport = {}
+    students_route_names = {}
     if include_transport_fees:
+        from app.models.transport import Route as RouteModel, StudentRoute as StudentRouteModel
         transport_query = db.query(
             Student.id,
             func.sum(StudentRouteFeeStructureModel.outstanding_amount).label('transport_outstanding')
@@ -255,6 +257,25 @@ def get_defaulters_report(
         ).group_by(Student.id).all()
 
         students_with_transport = {str(row.id): float(row.transport_outstanding) for row in transport_query}
+
+        # Fetch route names for transport students
+        route_name_query = db.query(
+            Student.id,
+            RouteModel.route_name,
+            RouteModel.route_number
+        ).join(
+            StudentRouteModel, Student.id == StudentRouteModel.student_id
+        ).join(
+            RouteModel, StudentRouteModel.route_id == RouteModel.id
+        ).filter(
+            Student.school_id == school_id,
+            StudentRouteModel.academic_year == academic_year
+        ).all()
+
+        students_route_names = {
+            str(row.id): f"{row.route_name}" + (f" ({row.route_number})" if row.route_number else "")
+            for row in route_name_query
+        }
 
     # Combine school fees and transport fees
     combined_students = {}
@@ -340,6 +361,8 @@ def get_defaulters_report(
 
         student_name = f"{student_data.first_name} {student_data.last_name}"
         outstanding = Decimal(str(total_outstanding))
+        transport_out = student_info.get('transport_outstanding', 0)
+        school_out = float(outstanding) - float(transport_out)
 
         defaulters.append(DefaulterStudent(
             student_id=str(student_data.id),
@@ -353,7 +376,10 @@ def get_defaulters_report(
             oldest_due_date=oldest_due_date,
             contact_phone=contact_phone,
             parent_phone=parent_phone,
-            father_name=father_name
+            father_name=father_name,
+            route_name=students_route_names.get(student_id),
+            transport_outstanding=float(transport_out),
+            school_outstanding=school_out
         ))
 
         total_outstanding_sum += outstanding

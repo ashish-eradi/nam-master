@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tabs, Card, Table, DatePicker, Select, Button, Row, Col, Statistic, Tag, Space, Modal, Descriptions } from 'antd';
-import { DollarOutlined, UserOutlined, BarChartOutlined, CalendarOutlined, PrinterOutlined, DownloadOutlined } from '@ant-design/icons';
+import { DollarOutlined, UserOutlined, BarChartOutlined, CalendarOutlined, PrinterOutlined, DownloadOutlined, CarOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import {
   useGetCollectionSummaryQuery,
@@ -170,7 +170,7 @@ const DefaultersReport: React.FC = () => {
     navigate(`/fee-collection?student_id=${selectedStudent.student_id}`);
   };
 
-  const columns = [
+  const baseColumns = [
     {
       title: 'Admission No.',
       dataIndex: 'admission_number',
@@ -226,58 +226,80 @@ const DefaultersReport: React.FC = () => {
     },
   ];
 
+  const routeColumn = {
+    title: 'Bus Route',
+    dataIndex: 'route_name',
+    key: 'route_name',
+    render: (route: string) => route
+      ? <Tag color="blue" icon={<CarOutlined />}>{route}</Tag>
+      : '-',
+  };
+
+  const busOutstandingColumn = {
+    title: 'Bus Due',
+    dataIndex: 'transport_outstanding',
+    key: 'transport_outstanding',
+    render: (amount: number) => amount > 0
+      ? <span style={{ color: '#fa8c16', fontWeight: 'bold' }}>₹{amount.toLocaleString()}</span>
+      : '-',
+    sorter: (a: any, b: any) => (a.transport_outstanding || 0) - (b.transport_outstanding || 0),
+  };
+
+  const allStudents = data?.students || [];
+  const busStudents = allStudents.filter((s: any) => s.route_name);
+  const schoolOnlyStudents = allStudents.filter((s: any) => !s.route_name || s.school_outstanding > 0);
+
+  const columnsAll = [...baseColumns, routeColumn];
+  const columnsBus = [
+    baseColumns[0], baseColumns[1], baseColumns[2], baseColumns[3],
+    routeColumn,
+    busOutstandingColumn,
+    baseColumns[5], // outstanding (total)
+    baseColumns[8], // contact
+  ];
+
+  const [duesTab, setDuesTab] = useState('all');
+
+  const activeStudents = duesTab === 'bus' ? busStudents : duesTab === 'school' ? schoolOnlyStudents : allStudents;
+  const activeColumns = duesTab === 'bus' ? columnsBus : columnsAll;
+
   const handleDownloadCSV = () => {
-    if (!data?.students?.length) return;
-    const headers = ['Admission No.', 'Student Name', 'Father Name', 'Class', 'Total Paid', 'Outstanding', 'Overdue Installments', 'Oldest Due Date', 'Contact'];
-    const rows = data.students.map((s: any) => [
-      s.admission_number,
-      s.student_name,
-      s.father_name || '',
-      s.class_name,
-      s.total_paid || 0,
-      s.total_outstanding,
-      s.overdue_installments,
-      s.oldest_due_date || '',
-      s.parent_phone || '',
-    ]);
+    if (!activeStudents.length) return;
+    const isBus = duesTab === 'bus';
+    const headers = isBus
+      ? ['Admission No.', 'Student Name', 'Father Name', 'Class', 'Bus Route', 'Bus Due', 'Total Outstanding', 'Contact']
+      : ['Admission No.', 'Student Name', 'Father Name', 'Class', 'Bus Route', 'Total Paid', 'Outstanding', 'Overdue Installments', 'Oldest Due Date', 'Contact'];
+    const rows = activeStudents.map((s: any) => isBus
+      ? [s.admission_number, s.student_name, s.father_name || '', s.class_name, s.route_name || '', s.transport_outstanding || 0, s.total_outstanding, s.parent_phone || '']
+      : [s.admission_number, s.student_name, s.father_name || '', s.class_name, s.route_name || '', s.total_paid || 0, s.total_outstanding, s.overdue_installments, s.oldest_due_date || '', s.parent_phone || '']
+    );
     const csv = [headers, ...rows].map(row => row.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `fee-dues-${academicYear}.csv`;
+    a.download = `fee-dues-${duesTab}-${academicYear}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handlePrint = () => {
-    if (!data?.students?.length) return;
-    const rows = data.students.map((s: any) => `
-      <tr>
-        <td>${s.admission_number}</td>
-        <td>${s.student_name}</td>
-        <td>${s.father_name || '-'}</td>
-        <td>${s.class_name}</td>
-        <td>₹${(s.total_paid || 0).toLocaleString()}</td>
-        <td>₹${s.total_outstanding.toLocaleString()}</td>
-        <td>${s.overdue_installments}</td>
-        <td>${s.oldest_due_date || '-'}</td>
-        <td>${s.parent_phone || '-'}</td>
-      </tr>`).join('');
-    const html = `<html><head><title>Fee Dues - ${academicYear}</title>
-      <style>
-        body { font-family: Arial, sans-serif; font-size: 12px; }
-        h2 { text-align: center; }
-        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
-        th { background: #f0f0f0; font-weight: bold; }
-      </style></head><body>
-      <h2>Fee Dues Report — ${academicYear}</h2>
-      <p>Total Students: ${data.total_defaulters} &nbsp;|&nbsp; Total Outstanding: ₹${data.total_outstanding.toLocaleString()}</p>
-      <table><thead><tr>
-        <th>Admission No.</th><th>Student Name</th><th>Father Name</th><th>Class</th>
-        <th>Paid</th><th>Outstanding</th><th>Overdue</th><th>Oldest Due</th><th>Contact</th>
-      </tr></thead><tbody>${rows}</tbody></table>
+    if (!activeStudents.length) return;
+    const isBus = duesTab === 'bus';
+    const tableRows = activeStudents.map((s: any) => isBus
+      ? `<tr><td>${s.admission_number}</td><td>${s.student_name}</td><td>${s.father_name || '-'}</td><td>${s.class_name}</td><td>${s.route_name || '-'}</td><td>₹${(s.transport_outstanding || 0).toLocaleString()}</td><td>₹${s.total_outstanding.toLocaleString()}</td><td>${s.parent_phone || '-'}</td></tr>`
+      : `<tr><td>${s.admission_number}</td><td>${s.student_name}</td><td>${s.father_name || '-'}</td><td>${s.class_name}</td><td>${s.route_name || '-'}</td><td>₹${(s.total_paid || 0).toLocaleString()}</td><td>₹${s.total_outstanding.toLocaleString()}</td><td>${s.overdue_installments}</td><td>${s.oldest_due_date || '-'}</td><td>${s.parent_phone || '-'}</td></tr>`
+    ).join('');
+    const headers = isBus
+      ? '<th>Adm No.</th><th>Student Name</th><th>Father Name</th><th>Class</th><th>Bus Route</th><th>Bus Due</th><th>Total Outstanding</th><th>Contact</th>'
+      : '<th>Adm No.</th><th>Student Name</th><th>Father Name</th><th>Class</th><th>Bus Route</th><th>Paid</th><th>Outstanding</th><th>Overdue</th><th>Oldest Due</th><th>Contact</th>';
+    const title = duesTab === 'bus' ? 'Bus Fee Dues' : duesTab === 'school' ? 'School Fee Dues' : 'All Fee Dues';
+    const html = `<html><head><title>${title} - ${academicYear}</title>
+      <style>body{font-family:Arial,sans-serif;font-size:12px}h2{text-align:center}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}th{background:#f0f0f0;font-weight:bold}</style>
+      </head><body>
+      <h2>${title} — ${academicYear}</h2>
+      <p>Total Students: ${activeStudents.length} &nbsp;|&nbsp; Total Outstanding: ₹${activeStudents.reduce((s: number, r: any) => s + (r.total_outstanding || 0), 0).toLocaleString()}</p>
+      <table><thead><tr>${headers}</tr></thead><tbody>${tableRows}</tbody></table>
       </body></html>`;
     const w = window.open('', '_blank');
     if (w) { w.document.write(html); w.document.close(); w.print(); }
@@ -362,13 +384,26 @@ const DefaultersReport: React.FC = () => {
           </Row>
 
           <Card>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12, gap: 8 }}>
-              <Button icon={<PrinterOutlined />} onClick={handlePrint}>Print</Button>
-              <Button icon={<DownloadOutlined />} type="primary" onClick={handleDownloadCSV}>Download CSV</Button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Tabs
+                activeKey={duesTab}
+                onChange={setDuesTab}
+                size="small"
+                style={{ marginBottom: 0 }}
+                items={[
+                  { key: 'all', label: `All (${allStudents.length})` },
+                  { key: 'school', label: `School Fees (${schoolOnlyStudents.length})` },
+                  { key: 'bus', label: <span><CarOutlined /> Bus Students ({busStudents.length})</span> },
+                ]}
+              />
+              <Space>
+                <Button icon={<PrinterOutlined />} onClick={handlePrint}>Print</Button>
+                <Button icon={<DownloadOutlined />} type="primary" onClick={handleDownloadCSV}>Download CSV</Button>
+              </Space>
             </div>
             <Table
-              dataSource={data.students}
-              columns={columns}
+              dataSource={activeStudents}
+              columns={activeColumns}
               loading={isLoading}
               rowKey="student_id"
               pagination={{ pageSize: 20 }}
