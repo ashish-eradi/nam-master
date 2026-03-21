@@ -544,6 +544,43 @@ def get_student_ledger(
             "outstanding_amount": float(hfs.outstanding_amount)
         })
 
+    # Fetch previous-year arrears (outstanding fees from years OTHER than current)
+    previous_year_arrears = []
+    total_arrears = 0.0
+    if academic_year:
+        # School fee arrears
+        arrear_fee_structs = db.query(StudentFeeStructureModel).filter(
+            StudentFeeStructureModel.student_id == student_id,
+            StudentFeeStructureModel.academic_year != academic_year,
+            StudentFeeStructureModel.outstanding_amount > 0
+        ).options(selectinload(StudentFeeStructureModel.class_fee)).all()
+        for fs in arrear_fee_structs:
+            fee_name = fs.class_fee.fee.fee_name if fs.class_fee and fs.class_fee.fee else "Unknown"
+            amount = float(fs.outstanding_amount)
+            total_arrears += amount
+            previous_year_arrears.append({
+                "academic_year": fs.academic_year,
+                "fee_name": fee_name,
+                "outstanding_amount": amount,
+                "type": "school"
+            })
+        # Transport fee arrears
+        arrear_transport = db.query(StudentRouteFeeStructureModel).filter(
+            StudentRouteFeeStructureModel.student_id == student_id,
+            StudentRouteFeeStructureModel.academic_year != academic_year,
+            StudentRouteFeeStructureModel.outstanding_amount > 0
+        ).options(selectinload(StudentRouteFeeStructureModel.route_fee).selectinload(RouteFeeModel.route)).all()
+        for tfs in arrear_transport:
+            route_name = tfs.route_fee.route.route_name if tfs.route_fee and tfs.route_fee.route else "Unknown Route"
+            amount = float(tfs.outstanding_amount)
+            total_arrears += amount
+            previous_year_arrears.append({
+                "academic_year": tfs.academic_year,
+                "fee_name": f"Transport - {route_name}",
+                "outstanding_amount": amount,
+                "type": "transport"
+            })
+
     return StudentLedger(
         student_id=str(student.id),
         student_name=f"{student.first_name} {student.last_name}",
@@ -566,7 +603,9 @@ def get_student_ledger(
             "received_by_name": p.received_by.full_name if p.received_by else "Unknown",
             "recorded_at": p.created_at.isoformat() if p.created_at else None,
             "edit_history": audit_logs_map.get(str(p.id), []),
-        } for p in payments]
+        } for p in payments],
+        previous_year_arrears=previous_year_arrears,
+        total_arrears=total_arrears,
     )
 
 

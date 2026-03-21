@@ -245,6 +245,8 @@ class StudentLedger(BaseModel):
     total_outstanding: float
     fee_structures: List[dict]
     payments: List[dict]
+    previous_year_arrears: List[dict] = []
+    total_arrears: float = 0
 
 # Student outstanding
 class StudentOutstanding(BaseModel):

@@ -96,6 +96,7 @@ export const studentsApi = api.injectEndpoints({
     bulkPromoteStudents: builder.mutation<any, {
       source_class_id: string;
       target_class_id: string;
+      new_academic_year: string;
       exclude_student_ids?: string[];
       demote_student_ids?: string[];
       demote_target_class_id?: string;

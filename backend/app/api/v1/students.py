@@ -561,6 +561,7 @@ def transfer_student(
 class BulkPromotionRequest(BaseModel):
     source_class_id: uuid.UUID
     target_class_id: uuid.UUID
+    new_academic_year: str
     exclude_student_ids: Optional[TypingList[uuid.UUID]] = []
     demote_student_ids: Optional[TypingList[uuid.UUID]] = []
     demote_target_class_id: Optional[uuid.UUID] = None
@@ -626,8 +627,9 @@ def bulk_promote_students(
             student.class_id = promotion.demote_target_class_id
             demoted_count += 1
         else:
-            # Promote student to target class
+            # Promote student to target class and update academic year
             student.class_id = promotion.target_class_id
+            student.academic_year = promotion.new_academic_year
             promoted_count += 1
 
     db.commit()

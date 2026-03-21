@@ -73,6 +73,8 @@ const StudentManagement: React.FC = () => {
   const [demoteTargetClassId, setDemoteTargetClassId] = useState<string>('');
   const [excludedStudents, setExcludedStudents] = useState<string[]>([]);
   const [demotedStudents, setDemotedStudents] = useState<string[]>([]);
+  const currentYear = new Date().getFullYear();
+  const [newAcademicYear, setNewAcademicYear] = useState<string>(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
 
   // Get payments and grades for selected student
   const { data: payments = [] } = useGetStudentPaymentsQuery(selectedStudent?.id || '', {
@@ -100,6 +102,7 @@ const StudentManagement: React.FC = () => {
     setDemoteTargetClassId('');
     setExcludedStudents([]);
     setDemotedStudents([]);
+    setNewAcademicYear(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
     setIsBulkPromoteModalOpen(true);
   };
 
@@ -149,6 +152,7 @@ const StudentManagement: React.FC = () => {
       await bulkPromote({
         source_class_id: sourceClassId,
         target_class_id: targetClassId,
+        new_academic_year: newAcademicYear,
         exclude_student_ids: excludedStudents,
         demote_student_ids: demotedStudents,
         demote_target_class_id: demoteTargetClassId || undefined,
@@ -510,9 +514,9 @@ const StudentManagement: React.FC = () => {
         width={700}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="large">
-          <Card title="Select Classes" size="small">
+          <Card title="Select Classes & Academic Year" size="small">
             <Row gutter={16}>
-              <Col span={12}>
+              <Col span={8}>
                 <div style={{ marginBottom: 8 }}>Source Class (Current)</div>
                 <Select
                   style={{ width: '100%' }}
@@ -527,7 +531,7 @@ const StudentManagement: React.FC = () => {
                   ))}
                 </Select>
               </Col>
-              <Col span={12}>
+              <Col span={8}>
                 <div style={{ marginBottom: 8 }}>Target Class (Promote To)</div>
                 <Select
                   style={{ width: '100%' }}
@@ -540,6 +544,23 @@ const StudentManagement: React.FC = () => {
                       {cls.name}
                     </Option>
                   ))}
+                </Select>
+              </Col>
+              <Col span={8}>
+                <div style={{ marginBottom: 8 }}>New Academic Year</div>
+                <Select
+                  style={{ width: '100%' }}
+                  value={newAcademicYear}
+                  onChange={setNewAcademicYear}
+                >
+                  {[0, 1, 2].map(offset => {
+                    const y = currentYear + offset;
+                    return (
+                      <Option key={y} value={`${y}-${String(y + 1).slice(-2)}`}>
+                        {y}-{String(y + 1).slice(-2)}
+                      </Option>
+                    );
+                  })}
                 </Select>
               </Col>
             </Row>

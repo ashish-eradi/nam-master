@@ -674,6 +674,40 @@ const FeeCollection: React.FC = () => {
                   />
                 </Card>
 
+                {/* Previous Year Arrears */}
+                {ledgerData.previous_year_arrears?.length > 0 && (
+                  <Card
+                    title={<span style={{ color: '#d46b08' }}>⚠ Previous Year Arrears (Old Dues)</span>}
+                    style={{ marginBottom: 16, border: '1px solid #ffa940' }}
+                    headStyle={{ background: '#fff7e6' }}
+                  >
+                    <Table
+                      dataSource={ledgerData.previous_year_arrears}
+                      rowKey={(r: any) => `${r.academic_year}-${r.fee_name}`}
+                      pagination={false}
+                      size="small"
+                      columns={[
+                        { title: 'Academic Year', dataIndex: 'academic_year', key: 'academic_year', render: (y: string) => <Tag color="orange">{y}</Tag> },
+                        { title: 'Fee', dataIndex: 'fee_name', key: 'fee_name' },
+                        {
+                          title: 'Old Due Amount',
+                          dataIndex: 'outstanding_amount',
+                          key: 'outstanding_amount',
+                          render: (a: number) => <span style={{ color: '#d46b08', fontWeight: 'bold' }}>₹{a.toFixed(2)}</span>,
+                        },
+                      ]}
+                      summary={() => (
+                        <Table.Summary.Row style={{ fontWeight: 'bold', background: '#fff7e6' }}>
+                          <Table.Summary.Cell index={0} colSpan={2}>Total Old Dues</Table.Summary.Cell>
+                          <Table.Summary.Cell index={1}>
+                            <span style={{ color: '#d46b08', fontWeight: 'bold' }}>₹{(ledgerData.total_arrears || 0).toFixed(2)}</span>
+                          </Table.Summary.Cell>
+                        </Table.Summary.Row>
+                      )}
+                    />
+                  </Card>
+                )}
+
                 {/* Payment History */}
                 <Card title="Payment History">
                   <Table

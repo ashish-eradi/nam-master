@@ -458,6 +458,17 @@ const DefaultersReport: React.FC = () => {
               <div style={{ textAlign: 'center', padding: '20px' }}>Loading fee details...</div>
             ) : ledgerData ? (
               <>
+                {ledgerData.previous_year_arrears?.length > 0 && (
+                  <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fff7e6', border: '1px solid #ffa940', borderRadius: 4 }}>
+                    <strong style={{ color: '#d46b08' }}>⚠ Old Dues from Previous Year(s): </strong>
+                    {ledgerData.previous_year_arrears.map((a: any) => (
+                      <Tag key={`${a.academic_year}-${a.fee_name}`} color="orange" style={{ marginBottom: 4 }}>
+                        {a.academic_year} — {a.fee_name}: ₹{a.outstanding_amount.toFixed(2)}
+                      </Tag>
+                    ))}
+                    <div style={{ marginTop: 4 }}><strong>Total Old Dues: ₹{(ledgerData.total_arrears || 0).toFixed(2)}</strong></div>
+                  </div>
+                )}
                 <h4>Fee Breakdown:</h4>
                 <Table
                   dataSource={ledgerData.fee_structures}
