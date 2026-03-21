@@ -69,8 +69,11 @@ export const transportApi = api.injectEndpoints({
       }),
       invalidatesTags: ['StudentRoute'],
     }),
-    getStudentRoute: builder.query<any, string>({
-      query: (studentId) => `transport/student/${studentId}/route`,
+    getStudentRoute: builder.query<any, { studentId: string; academic_year?: string }>({
+      query: ({ studentId, academic_year }) => ({
+        url: `transport/student/${studentId}/route`,
+        params: academic_year ? { academic_year } : {},
+      }),
       providesTags: ['StudentRoute'],
     }),
     unassignStudentFromRoute: builder.mutation<void, string>({

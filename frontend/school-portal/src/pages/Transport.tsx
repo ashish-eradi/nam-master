@@ -191,6 +191,10 @@ const VehiclesManager: React.FC = () => {
 };
 
 const StudentAssignment: React.FC = () => {
+  const currentYear = new Date().getFullYear();
+  const defaultAcademicYear = `${currentYear}-${String(currentYear + 1).slice(-2)}`;
+
+  const [academicYear, setAcademicYear] = useState(defaultAcademicYear);
   const [studentSearch, setStudentSearch] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -200,12 +204,15 @@ const StudentAssignment: React.FC = () => {
   const [form] = Form.useForm();
   const [feeForm] = Form.useForm();
 
-  const { data: students, isLoading: studentsLoading } = useGetStudentsQuery({ search: studentSearch }, { skip: !!selectedClassId });
+  const { data: students, isLoading: studentsLoading } = useGetStudentsQuery({ search: studentSearch }, { skip: !!selectedClassId || !studentSearch });
   const { data: classStudents, isLoading: classStudentsLoading } = useGetStudentsByClassIdQuery(selectedClassId, { skip: !selectedClassId });
   const { data: classes, isLoading: classesLoading } = useGetClassesQuery();
   const { data: routes, isLoading: routesLoading } = useGetRoutesQuery();
   const { data: routeFees } = useGetRouteFeesQuery();
-  const { data: studentRoute, refetch } = useGetStudentRouteQuery(selectedStudent?.id, { skip: !selectedStudent });
+  const { data: studentRoute, refetch } = useGetStudentRouteQuery(
+    { studentId: selectedStudent?.id, academic_year: academicYear },
+    { skip: !selectedStudent }
+  );
 
   const [assignStudent] = useAssignStudentToRouteMutation();
   const [assignRouteFee] = useAssignRouteFeeToStudentMutation();
@@ -213,17 +220,16 @@ const StudentAssignment: React.FC = () => {
 
   const schoolId = useSelector((state: RootState) => state.auth.user?.school_id);
 
-  // Build options based on whether class filter or name search is active
-  const studentOptions = selectedClassId
-    ? classStudents?.map((s: any) => ({ value: s.id, label: `${s.first_name} ${s.last_name} (${s.admission_number})` }))
-    : students?.map(s => ({ value: s.id, label: `${s.first_name} ${s.last_name} (${s.admission_number})` }));
+  const studentOptions = students?.map(s => ({
+    value: s.id,
+    label: `${s.first_name} ${s.last_name} (${s.admission_number})`,
+    student: s,
+  }));
 
-  // Filter route fees for the currently selected route
   const feesForRoute = routeFees?.filter((rf: any) => rf.route_id === selectedRouteId) || [];
 
   const handleStudentSelect = (value: string, option: any) => {
     setSelectedStudent({ id: value, name: option.label });
-    refetch();
   };
 
   const handleClassChange = (classId: string) => {
@@ -232,113 +238,175 @@ const StudentAssignment: React.FC = () => {
     setSelectedStudent(null);
   };
 
+  const handleCardClick = (student: any) => {
+    setSelectedStudent({ id: student.id, name: `${student.first_name} ${student.last_name} (${student.admission_number})` });
+  };
+
   const handleAssign = () => {
     form.validateFields().then(async (values) => {
-      const currentYear = new Date().getFullYear();
-      const academic_year = `${currentYear}-${String(currentYear + 1).slice(-2)}`;
+      try {
+        await assignStudent({ ...values, student_id: selectedStudent.id, school_id: schoolId, academic_year: academicYear }).unwrap();
 
-      // 1. Assign student to route
-      await assignStudent({ ...values, student_id: selectedStudent.id, school_id: schoolId, academic_year });
-
-      // 2. If a route fee was selected, assign it too
-      if (values.route_fee_id) {
-        try {
-          await assignRouteFee({
-            student_id: selectedStudent.id,
-            body: { route_fee_id: values.route_fee_id, academic_year, create_installments: false }
-          }).unwrap();
-          message.success('Route and transport fee assigned successfully!');
-        } catch (err: any) {
-          message.warning('Route assigned but fee assignment failed: ' + (err?.data?.detail || 'Unknown error'));
+        if (values.route_fee_id) {
+          try {
+            await assignRouteFee({
+              student_id: selectedStudent.id,
+              body: { route_fee_id: values.route_fee_id, academic_year, create_installments: false }
+            }).unwrap();
+            message.success('Route and transport fee assigned successfully!');
+          } catch (err: any) {
+            message.warning('Route assigned but fee assignment failed: ' + (err?.data?.detail || 'Unknown error'));
+          }
+        } else {
+          message.success('Route assigned successfully!');
         }
-      } else {
-        message.success('Route assigned successfully!');
-      }
 
-      setIsModalVisible(false);
-      setSelectedRouteId('');
-      form.resetFields();
-      refetch();
+        setIsModalVisible(false);
+        setSelectedRouteId('');
+        form.resetFields();
+        refetch();
+      } catch (err: any) {
+        message.error('Assignment failed: ' + (err?.data?.detail || 'Unknown error'));
+      }
     });
   };
 
   const handleUnassign = async () => {
-    if (studentRoute) {
-      await unassignStudent(studentRoute.id);
+    if (!studentRoute?.id) return;
+    try {
+      await unassignStudent(studentRoute.id).unwrap();
+      message.success('Student unassigned from route.');
       refetch();
+    } catch (err: any) {
+      message.error('Failed to unassign: ' + (err?.data?.detail || 'Unknown error'));
     }
   };
 
-  // Find current route fee for display
   const currentRouteFee = studentRoute
     ? routeFees?.find((rf: any) => rf.route_id === studentRoute.route_id)
     : null;
 
+  const displayStudents = selectedClassId ? classStudents : [];
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div>
-          <div style={{ marginBottom: 4, fontWeight: 'bold', fontSize: 13 }}>Filter by Class:</div>
-          <Select
-            style={{ width: 200 }}
-            placeholder="Select a class"
-            loading={classesLoading}
-            value={selectedClassId || undefined}
-            onChange={handleClassChange}
-            allowClear
-            onClear={() => { setSelectedClassId(''); setSelectedStudent(null); }}
-          >
-            {classes?.map((cls: any) => (
-              <Option key={cls.id} value={cls.id}>{cls.name}</Option>
-            ))}
-          </Select>
+      {/* Top filters */}
+      <Card style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div>
+            <div style={{ marginBottom: 4, fontWeight: 'bold', fontSize: 13 }}>Academic Year:</div>
+            <Select value={academicYear} onChange={val => { setAcademicYear(val); setSelectedStudent(null); }} style={{ width: 130 }}>
+              {[0, 1, 2].map(offset => {
+                const y = currentYear - offset;
+                return <Option key={y} value={`${y}-${String(y + 1).slice(-2)}`}>{y}-{String(y + 1).slice(-2)}</Option>;
+              })}
+            </Select>
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, fontWeight: 'bold', fontSize: 13 }}>Filter by Class:</div>
+            <Select
+              style={{ width: 200 }}
+              placeholder="Select a class"
+              loading={classesLoading}
+              value={selectedClassId || undefined}
+              onChange={handleClassChange}
+              allowClear
+              onClear={() => { setSelectedClassId(''); setSelectedStudent(null); }}
+            >
+              {classes?.map((cls: any) => (
+                <Option key={cls.id} value={cls.id}>{cls.name}</Option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, fontWeight: 'bold', fontSize: 13 }}>Search by Name:</div>
+            <AutoComplete
+              style={{ width: 280 }}
+              options={studentOptions}
+              onSelect={handleStudentSelect}
+              onSearch={(val) => { setStudentSearch(val); setSelectedClassId(''); setSelectedStudent(null); }}
+              placeholder="Type student name..."
+              loading={studentsLoading}
+              value={studentSearch || undefined}
+            />
+          </div>
         </div>
-        <div>
-          <div style={{ marginBottom: 4, fontWeight: 'bold', fontSize: 13 }}>Or Search by Name:</div>
-          <AutoComplete
-            style={{ width: 280 }}
-            options={studentOptions}
-            onSelect={handleStudentSelect}
-            onSearch={(val) => { setStudentSearch(val); setSelectedClassId(''); }}
-            placeholder="Type student name..."
-            loading={studentsLoading || classStudentsLoading}
-            value={studentSearch || undefined}
-          />
+      </Card>
+
+      {/* Student Cards Grid (when class is selected) */}
+      {selectedClassId && (
+        <div style={{ marginBottom: 16 }}>
+          {classStudentsLoading ? (
+            <div style={{ textAlign: 'center', padding: 24 }}>Loading students...</div>
+          ) : (displayStudents?.length ?? 0) === 0 ? (
+            <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>No students in this class.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+              {displayStudents?.map((student: any) => {
+                const isSelected = selectedStudent?.id === student.id;
+                return (
+                  <Card
+                    key={student.id}
+                    size="small"
+                    hoverable
+                    onClick={() => handleCardClick(student)}
+                    style={{
+                      cursor: 'pointer',
+                      border: isSelected ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                      background: isSelected ? '#e6f7ff' : '#fff',
+                    }}
+                  >
+                    <div style={{ fontWeight: 'bold', fontSize: 14 }}>{student.first_name} {student.last_name}</div>
+                    <div style={{ color: '#666', fontSize: 12 }}>{student.admission_number}</div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* Transport Status Card for selected student */}
       {selectedStudent && (
-        <Card title={`Transport Status for ${selectedStudent.name}`}>
+        <Card
+          title={`Transport — ${selectedStudent.name}`}
+          style={{ marginBottom: 16 }}
+          extra={<span style={{ color: '#888', fontSize: 12 }}>Year: {academicYear}</span>}
+        >
           {studentRoute ? (
             <div>
-              <p><strong>Route:</strong> {routes?.find(r => r.id === studentRoute.route_id)?.route_name}</p>
-              <p><strong>Pickup Point:</strong> {studentRoute.pickup_point}</p>
+              <p><strong>Route:</strong> {routes?.find(r => r.id === studentRoute.route_id)?.route_name || 'Unknown'}</p>
+              <p><strong>Pickup Point:</strong> {studentRoute.pickup_point || '-'}</p>
               {currentRouteFee && (
-                <p><strong>Route Fee Template:</strong> ₹{currentRouteFee.amount} ({currentRouteFee.installment_type})</p>
+                <p><strong>Route Fee:</strong> ₹{currentRouteFee.amount} ({currentRouteFee.installment_type})</p>
               )}
               <Space>
-                <Button
-                  type="default"
-                  onClick={() => {
-                    feeForm.resetFields();
-                    setIsFeeModalVisible(true);
-                  }}
-                >
+                <Button type="default" onClick={() => { feeForm.resetFields(); setIsFeeModalVisible(true); }}>
                   Assign Transport Fee
                 </Button>
-                <Popconfirm title="Sure to unassign?" onConfirm={handleUnassign}>
+                <Popconfirm title="Unassign this student from the route?" onConfirm={handleUnassign} okText="Yes" cancelText="No">
                   <Button danger>Unassign from Route</Button>
                 </Popconfirm>
               </Space>
             </div>
           ) : (
             <div>
-              <p>This student is not currently assigned to a transport route.</p>
-              <Button type="primary" onClick={() => setIsModalVisible(true)}>Assign to Route</Button>
+              <p style={{ color: '#888' }}>Not assigned to any transport route for {academicYear}.</p>
+              <Button type="primary" onClick={() => { form.resetFields(); setIsModalVisible(true); }}>
+                Assign to Route
+              </Button>
             </div>
           )}
         </Card>
       )}
-      <Modal title="Assign Route & Fee" open={isModalVisible} onOk={handleAssign} onCancel={() => { setIsModalVisible(false); setSelectedRouteId(''); form.resetFields(); }}>
+
+      {/* Assign Route Modal */}
+      <Modal
+        title="Assign Route & Fee"
+        open={isModalVisible}
+        onOk={handleAssign}
+        onCancel={() => { setIsModalVisible(false); setSelectedRouteId(''); form.resetFields(); }}
+      >
         <Form form={form} layout="vertical">
           <Form.Item name="route_id" label="Route" rules={[{ required: true }]}>
             <Select
@@ -364,14 +432,12 @@ const StudentAssignment: React.FC = () => {
         </Form>
       </Modal>
 
-      {/* Modal to assign a fee to an already-routed student */}
+      {/* Assign Fee Modal (for already-routed student) */}
       <Modal
         title="Assign Transport Fee"
         open={isFeeModalVisible}
         onOk={() => {
           feeForm.validateFields().then(async (values) => {
-            const currentYear = new Date().getFullYear();
-            const academic_year = `${currentYear}-${String(currentYear + 1).slice(-2)}`;
             try {
               await assignRouteFee({
                 student_id: selectedStudent.id,

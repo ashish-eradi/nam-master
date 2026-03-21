@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.core.database import get_db
 from app.schemas.transport_schema import Route, RouteCreate, RouteUpdate, Vehicle, VehicleCreate, VehicleUpdate, StudentRoute, StudentRouteCreate, RouteFee, RouteFeeCreate, RouteFeeUpdate, StudentRouteFeeAssignment
 from app.models.transport import Route as RouteModel, Vehicle as VehicleModel, StudentRoute as StudentRouteModel, RouteFee as RouteFeeModel, StudentRouteFeeStructure as StudentRouteFeeStructureModel
@@ -100,8 +100,28 @@ def assign_student_to_route(student_route: StudentRouteCreate, db: Session = Dep
     return db_student_route
 
 @router.get("/student/{student_id}/route", response_model=StudentRoute, dependencies=[Depends(is_admin)])
-def get_student_route(student_id: uuid.UUID, db: Session = Depends(get_db), school_id: str = Depends(get_current_user_school)):
-    return tenant_aware_query(db, StudentRouteModel, school_id).filter(StudentRouteModel.student_id == student_id).first()
+def get_student_route(
+    student_id: uuid.UUID,
+    academic_year: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    q = tenant_aware_query(db, StudentRouteModel, school_id).filter(StudentRouteModel.student_id == student_id)
+    if academic_year:
+        q = q.filter(StudentRouteModel.academic_year == academic_year)
+    return q.order_by(StudentRouteModel.created_at.desc()).first()
+
+@router.delete("/assign/{assignment_id}", status_code=204, dependencies=[Depends(is_admin)])
+def unassign_student_from_route(
+    assignment_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    assignment = tenant_aware_query(db, StudentRouteModel, school_id).filter(StudentRouteModel.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    db.delete(assignment)
+    db.commit()
 
 
 # --- Route Fee Endpoints ---
