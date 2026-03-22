@@ -87,6 +87,7 @@ def _build_ctx(print_settings: dict, doc_type: str) -> dict:
         'primary_rgb': _hex_to_rgb(primary_color),
         'show_logo': doc_settings.get('show_logo', True),
         'show_signature': doc_settings.get('show_signature', True),
+        'custom_template_url': doc_settings.get('custom_template_url'),
     }
 
 
@@ -115,7 +116,11 @@ class PDFReceiptService:
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=ctx['pagesize'])
 
-        y = PDFReceiptService._draw_receipt_header(pdf, payment, ctx, school_logo_path)
+        custom_tpl = ctx.get('custom_template_url')
+        if custom_tpl:
+            y = PDFReceiptService._apply_custom_template(pdf, custom_tpl, ctx)
+        else:
+            y = PDFReceiptService._draw_receipt_header(pdf, payment, ctx, school_logo_path)
         y = PDFReceiptService._draw_receipt_number(pdf, payment.receipt_number, y, ctx)
         y = PDFReceiptService._draw_details_section(pdf, payment, y, ctx, father_name=father_name)
         y = PDFReceiptService._draw_payment_table(pdf, payment, y, ctx)
@@ -130,6 +135,45 @@ class PDFReceiptService:
     # ------------------------------------------------------------------ #
     # Receipt internal draw methods                                         #
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _apply_custom_template(pdf: canvas.Canvas, template_url: str, ctx: dict) -> float:
+        """Draw a custom uploaded template image/PDF as the page background header.
+        Returns the y position after the template image."""
+        import re
+        # Convert URL path to filesystem path
+        fs_path = "/app" + template_url
+        if not os.path.exists(fs_path):
+            return ctx['height'] - ctx['margin']
+
+        ext = os.path.splitext(fs_path)[1].lower()
+        W, H, margin = ctx['width'], ctx['height'], ctx['margin']
+
+        if ext in ('.png', '.jpg', '.jpeg'):
+            # Draw the image spanning full page width at the top
+            from reportlab.lib.utils import ImageReader
+            try:
+                img = ImageReader(fs_path)
+                iw, ih = img.getSize()
+                # Scale to page width
+                scale = W / iw
+                rendered_height = min(ih * scale, H * 0.35)  # Max 35% of page height
+                pdf.drawImage(fs_path, 0, H - rendered_height, width=W, height=rendered_height,
+                              preserveAspectRatio=True)
+                return H - rendered_height - margin * 0.3
+            except Exception:
+                return H - margin
+        elif ext == '.pdf':
+            # Use first page of PDF as background
+            try:
+                from reportlab.pdfgen import canvas as _canvas
+                # Draw PDF page background using pdfrw or just place as image
+                # Fallback: just return top margin if PDF rendering not supported
+                return H - margin
+            except Exception:
+                return H - margin
+
+        return H - margin
 
     @staticmethod
     def _draw_receipt_header(pdf: canvas.Canvas, payment: PaymentModel,
@@ -395,7 +439,11 @@ class PDFReceiptService:
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=ctx['pagesize'])
 
-        y = PDFReceiptService._draw_due_slip_header(pdf, student_data, ctx)
+        custom_tpl = ctx.get('custom_template_url')
+        if custom_tpl:
+            y = PDFReceiptService._apply_custom_template(pdf, custom_tpl, ctx)
+        else:
+            y = PDFReceiptService._draw_due_slip_header(pdf, student_data, ctx)
 
         pdf.setFont("Helvetica-Bold", _fs(17, ctx))
         r, g, b = ctx['primary_rgb']

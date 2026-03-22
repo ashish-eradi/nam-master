@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import MiscellaneousFeesPage from './MiscellaneousFees';
-import PrintSettings from '../components/PrintSettings';
 import { getCurrentAcademicYear, getAcademicYearOptions } from '../utils/academicYear';
 import { Tabs, Table, Button, Modal, Form, Input, InputNumber, DatePicker, Space, Popconfirm, Select, Card, Row, Col, message, AutoComplete } from 'antd';
 import { useSelector } from 'react-redux';
@@ -1413,9 +1412,6 @@ const Finance: React.FC = () => {
         </TabPane>
         <TabPane tab="Miscellaneous Fees" key="10">
           <MiscellaneousFeesPage />
-        </TabPane>
-        <TabPane tab="Print Settings" key="11">
-          <PrintSettings />
         </TabPane>
       </Tabs>
     </div>

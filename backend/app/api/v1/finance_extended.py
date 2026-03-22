@@ -1588,8 +1588,94 @@ def update_print_settings(
     if not school:
         raise HTTPException(status_code=404, detail="School not found")
     current = dict(school.settings or {})
+    # Preserve existing template paths when updating other settings
+    existing_print = current.get('print', {})
+    for doc_type in ('receipt', 'fee_due'):
+        if doc_type in body and doc_type in existing_print:
+            if 'custom_template_url' in existing_print[doc_type] and 'custom_template_url' not in body.get(doc_type, {}):
+                body[doc_type]['custom_template_url'] = existing_print[doc_type]['custom_template_url']
     current['print'] = body
     school.settings = current
     flag_modified(school, 'settings')
     db.commit()
     return body
+
+
+from fastapi import UploadFile, File, Form as FormField
+from pathlib import Path as FilePath
+import shutil
+
+TEMPLATE_UPLOAD_DIR = FilePath("/app/uploads/templates")
+ALLOWED_TEMPLATE_EXTS = {".png", ".jpg", ".jpeg", ".pdf"}
+
+@router.post("/print-settings/upload-template", dependencies=[Depends(is_admin)])
+async def upload_print_template(
+    doc_type: str = FormField(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Upload a custom template image/PDF for receipts or fee due slips."""
+    if doc_type not in ("receipt", "fee_due"):
+        raise HTTPException(status_code=400, detail="doc_type must be 'receipt' or 'fee_due'")
+
+    ext = FilePath(file.filename).suffix.lower()
+    if ext not in ALLOWED_TEMPLATE_EXTS:
+        raise HTTPException(status_code=400, detail=f"Allowed file types: PNG, JPG, PDF")
+
+    save_dir = TEMPLATE_UPLOAD_DIR / str(school_id)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{doc_type}_template{ext}"
+    file_path = save_dir / filename
+
+    with file_path.open("wb") as buf:
+        shutil.copyfileobj(file.file, buf)
+
+    template_url = f"/uploads/templates/{school_id}/{filename}"
+
+    # Save URL into school print settings
+    from app.models.school import School as SchoolModel
+    from sqlalchemy.orm.attributes import flag_modified
+    school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
+    current = dict(school.settings or {})
+    print_s = current.get('print', {})
+    if doc_type not in print_s:
+        print_s[doc_type] = {}
+    print_s[doc_type]['custom_template_url'] = template_url
+    current['print'] = print_s
+    school.settings = current
+    flag_modified(school, 'settings')
+    db.commit()
+
+    return {"custom_template_url": template_url, "doc_type": doc_type}
+
+
+@router.delete("/print-settings/upload-template/{doc_type}", dependencies=[Depends(is_admin)])
+def remove_print_template(
+    doc_type: str,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Remove a custom template, reverting to the programmatic design."""
+    if doc_type not in ("receipt", "fee_due"):
+        raise HTTPException(status_code=400, detail="doc_type must be 'receipt' or 'fee_due'")
+
+    from app.models.school import School as SchoolModel
+    from sqlalchemy.orm.attributes import flag_modified
+    school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
+    current = dict(school.settings or {})
+    print_s = current.get('print', {})
+    if doc_type in print_s:
+        old_url = print_s[doc_type].pop('custom_template_url', None)
+        if old_url:
+            try:
+                old_path = FilePath("/app") / old_url.lstrip("/")
+                if old_path.exists():
+                    old_path.unlink()
+            except Exception:
+                pass
+    current['print'] = print_s
+    school.settings = current
+    flag_modified(school, 'settings')
+    db.commit()
+    return {"detail": "Template removed"}

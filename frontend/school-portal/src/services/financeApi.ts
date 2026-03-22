@@ -271,6 +271,22 @@ export const financeApi = api.injectEndpoints({
       }),
       invalidatesTags: ['PrintSettings' as any],
     }),
+    uploadPrintTemplate: builder.mutation<any, { doc_type: string; file: File }>({
+      query: ({ doc_type, file }) => {
+        const formData = new FormData();
+        formData.append('doc_type', doc_type);
+        formData.append('file', file);
+        return { url: 'finance-extended/print-settings/upload-template', method: 'POST', body: formData };
+      },
+      invalidatesTags: ['PrintSettings' as any],
+    }),
+    removePrintTemplate: builder.mutation<any, string>({
+      query: (doc_type) => ({
+        url: `finance-extended/print-settings/upload-template/${doc_type}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['PrintSettings' as any],
+    }),
 
     // Bulk Operations
     bulkCreatePayments: builder.mutation<{ message: string; created_count: number }, BulkPaymentCreate>({
@@ -416,4 +432,6 @@ export const {
   // Print settings
   useGetPrintSettingsQuery,
   useUpdatePrintSettingsMutation,
+  useUploadPrintTemplateMutation,
+  useRemovePrintTemplateMutation,
 } = financeApi;
