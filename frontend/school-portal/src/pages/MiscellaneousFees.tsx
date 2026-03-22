@@ -325,7 +325,6 @@ const AssignToStudent: React.FC = () => {
 const MiscellaneousFeesPage: React.FC = () => {
   return (
     <div>
-      <h2>Miscellaneous Fees</h2>
       <Tabs defaultActiveKey="1">
         <TabPane tab="Categories" key="1">
           <CategoriesManager />
