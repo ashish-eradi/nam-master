@@ -39,14 +39,27 @@ def update_fund(fund_id: uuid.UUID, fund: FundUpdate, db: Session = Depends(get_
     db_fund = tenant_aware_query(db, FundModel, school_id).filter(FundModel.id == fund_id).first()
     if not db_fund:
         raise HTTPException(status_code=404, detail="Fund not found")
-    
+
     update_data = fund.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_fund, key, value)
-    
+
     db.commit()
     db.refresh(db_fund)
     return db_fund
+
+@router.delete("/funds/{fund_id}", status_code=204, dependencies=[Depends(is_admin)])
+def delete_fund(fund_id: uuid.UUID, db: Session = Depends(get_db), school_id: str = Depends(get_current_user_school)):
+    """Delete a fund. Raises 400 if payments are linked to it."""
+    db_fund = tenant_aware_query(db, FundModel, school_id).filter(FundModel.id == fund_id).first()
+    if not db_fund:
+        raise HTTPException(status_code=404, detail="Fund not found")
+    from app.models.finance import Payment as PaymentModel
+    linked_payments = db.query(PaymentModel).filter(PaymentModel.fund_id == fund_id).count()
+    if linked_payments > 0:
+        raise HTTPException(status_code=400, detail=f"Cannot delete fund: {linked_payments} payment(s) are linked to it")
+    db.delete(db_fund)
+    db.commit()
 
 # --- Fee Management Endpoints ---
 

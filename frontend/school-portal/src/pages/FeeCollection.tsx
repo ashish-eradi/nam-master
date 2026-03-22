@@ -156,7 +156,7 @@ const FeeCollection: React.FC = () => {
     // Fetch ledger data
     await getStudentLedger({
       student_id: student.id,
-      academic_year: undefined, // Get all years
+      academic_year: student.academic_year ?? undefined,
     });
   };
 
@@ -212,7 +212,7 @@ const FeeCollection: React.FC = () => {
     try {
       const pdfBlob = await downloadFeeDueSlip({
         student_id: selectedStudent.id,
-        academic_year: undefined,
+        academic_year: selectedStudent?.academic_year ?? undefined,
       }).unwrap();
 
       const url = window.URL.createObjectURL(pdfBlob);
@@ -290,7 +290,7 @@ const FeeCollection: React.FC = () => {
       // Refresh ledger data
       await getStudentLedger({
         student_id: selectedStudent.id,
-        academic_year: undefined,
+        academic_year: selectedStudent?.academic_year ?? undefined,
       });
 
       handlePaymentModalCancel();
@@ -343,7 +343,7 @@ const FeeCollection: React.FC = () => {
       // Refresh ledger data
       await getStudentLedger({
         student_id: selectedStudent.id,
-        academic_year: undefined,
+        academic_year: selectedStudent?.academic_year ?? undefined,
       });
 
       handleEditModalCancel();

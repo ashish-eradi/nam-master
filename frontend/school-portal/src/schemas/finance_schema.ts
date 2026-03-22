@@ -152,6 +152,7 @@ export interface StudentLookup {
   admission_number: string;
   full_name: string;
   class_name: string;
+  academic_year?: string;
   outstanding_balance: number;
 }
 

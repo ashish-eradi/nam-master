@@ -57,8 +57,13 @@ const Funds: React.FC = () => {
     });
   };
 
-  const handleDelete = (id: string) => {
-    deleteFund(id);
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteFund(id).unwrap();
+      message.success('Fund deleted successfully');
+    } catch (err: any) {
+      message.error(err?.data?.detail || 'Failed to delete fund');
+    }
   };
 
   const columns = [

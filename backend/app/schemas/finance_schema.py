@@ -219,6 +219,7 @@ class StudentLookup(BaseModel):
     admission_number: str
     full_name: str
     class_name: str
+    academic_year: Optional[str] = None
     outstanding_balance: float
 
 class TeacherLookup(BaseModel):

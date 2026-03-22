@@ -130,6 +130,7 @@ def lookup_students(
             "last_name": student.last_name,
             "class_name": student.class_.name if student.class_ else "N/A",
             "class_id": str(student.class_id) if student.class_id else None,
+            "academic_year": student.academic_year,
             "outstanding_balance": float(total_outstanding),
             "parent_info": parent_info
         }
