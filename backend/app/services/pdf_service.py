@@ -29,7 +29,8 @@ class PDFReceiptService:
     LOGO_SIZE = 1 * inch
 
     @staticmethod
-    def generate_receipt(payment: PaymentModel, db: Session, school_logo_path: Optional[str] = None) -> BytesIO:
+    def generate_receipt(payment: PaymentModel, db: Session, school_logo_path: Optional[str] = None,
+                         father_name: Optional[str] = None, total_outstanding: float = 0.0) -> BytesIO:
         """
         Generate a professional PDF receipt for a payment.
 
@@ -37,18 +38,11 @@ class PDFReceiptService:
             payment: Payment model instance (with loaded relationships)
             db: Database session
             school_logo_path: Optional path to school logo image
+            father_name: Father's name from parent profile
+            total_outstanding: Remaining outstanding balance after this payment
 
         Returns:
             BytesIO buffer containing the PDF
-
-        Example usage:
-            payment = db.query(PaymentModel).options(
-                selectinload(PaymentModel.student),
-                selectinload(PaymentModel.fund),
-                selectinload(PaymentModel.payment_details),
-                selectinload(PaymentModel.received_by)
-            ).first()
-            pdf_buffer = PDFReceiptService.generate_receipt(payment, db)
         """
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=A4)
@@ -65,7 +59,7 @@ class PDFReceiptService:
 
         # Draw student and payment details
         y_position = PDFReceiptService._draw_details_section(
-            pdf, payment, y_position
+            pdf, payment, y_position, father_name=father_name
         )
 
         # Draw payment breakdown table
@@ -76,6 +70,11 @@ class PDFReceiptService:
         # Draw amount in words
         y_position = PDFReceiptService._draw_amount_in_words(
             pdf, payment.amount_paid, y_position
+        )
+
+        # Draw outstanding balance
+        y_position = PDFReceiptService._draw_outstanding_balance(
+            pdf, total_outstanding, y_position
         )
 
         # Draw footer with signature boxes
@@ -156,7 +155,8 @@ class PDFReceiptService:
         return y - 0.5 * inch
 
     @staticmethod
-    def _draw_details_section(pdf: canvas.Canvas, payment: PaymentModel, y: float) -> float:
+    def _draw_details_section(pdf: canvas.Canvas, payment: PaymentModel, y: float,
+                              father_name: Optional[str] = None) -> float:
         """Draw student and payment details"""
         pdf.setFont("Helvetica", 11)
 
@@ -167,6 +167,7 @@ class PDFReceiptService:
 
         details = [
             ("Student Name:", student_name),
+            ("Father's Name:", father_name or "N/A"),
             ("Admission No:", admission_no),
             ("Class:", class_name),
             ("Payment Date:", payment.payment_date.strftime("%d %B %Y")),
@@ -272,6 +273,53 @@ class PDFReceiptService:
         pdf.drawString(PDFReceiptService.MARGIN + 1.5 * inch, y, amount_words)
 
         return y - 0.5 * inch
+
+    @staticmethod
+    def _draw_outstanding_balance(pdf: canvas.Canvas, total_outstanding: float, y: float) -> float:
+        """Draw outstanding balance box after this payment"""
+        box_height = 0.75 * inch
+        box_x = PDFReceiptService.MARGIN
+        box_width = PDFReceiptService.PAGE_WIDTH - 2 * PDFReceiptService.MARGIN
+
+        if total_outstanding > 0:
+            # Orange/red background for pending dues
+            pdf.setFillColorRGB(1, 0.95, 0.9)
+            pdf.setStrokeColorRGB(0.85, 0.33, 0)
+        else:
+            # Green background for fully paid
+            pdf.setFillColorRGB(0.9, 1, 0.9)
+            pdf.setStrokeColorRGB(0, 0.6, 0)
+
+        pdf.rect(box_x, y - box_height, box_width, box_height, fill=1, stroke=1)
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.setStrokeColorRGB(0, 0, 0)
+
+        if total_outstanding > 0:
+            pdf.setFont("Helvetica-Bold", 13)
+            pdf.setFillColorRGB(0.6, 0.2, 0)
+            pdf.drawCentredString(
+                PDFReceiptService.PAGE_WIDTH / 2,
+                y - 0.28 * inch,
+                f"Outstanding Balance: \u20b9{total_outstanding:,.2f}"
+            )
+            pdf.setFont("Helvetica", 9)
+            pdf.setFillColorRGB(0.4, 0.4, 0.4)
+            pdf.drawCentredString(
+                PDFReceiptService.PAGE_WIDTH / 2,
+                y - 0.52 * inch,
+                "Please clear the remaining dues at the earliest."
+            )
+        else:
+            pdf.setFont("Helvetica-Bold", 13)
+            pdf.setFillColorRGB(0, 0.5, 0)
+            pdf.drawCentredString(
+                PDFReceiptService.PAGE_WIDTH / 2,
+                y - 0.38 * inch,
+                "All Dues Cleared \u2013 No Outstanding Balance"
+            )
+
+        pdf.setFillColorRGB(0, 0, 0)
+        return y - box_height - 0.3 * inch
 
     @staticmethod
     def _draw_footer(pdf: canvas.Canvas, payment: PaymentModel):

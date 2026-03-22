@@ -851,8 +851,32 @@ def download_payment_receipt(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
+    # Fetch father name from parent profile
+    father_name = None
+    try:
+        from app.models.parent import ParentStudentRelation as ParentStudentRelationModel
+        from sqlalchemy.orm import joinedload as _jl
+        p_rel = db.query(ParentStudentRelationModel).options(
+            _jl(ParentStudentRelationModel.parent)
+        ).filter(ParentStudentRelationModel.student_id == payment.student_id).first()
+        if p_rel and p_rel.parent:
+            father_name = p_rel.parent.father_name
+    except Exception:
+        pass
+
+    # Calculate total outstanding for the student (all years)
+    total_outstanding = 0.0
+    try:
+        rows = db.query(StudentFeeStructureModel).filter(
+            StudentFeeStructureModel.student_id == payment.student_id,
+            StudentFeeStructureModel.outstanding_amount > 0
+        ).all()
+        total_outstanding = sum(float(r.outstanding_amount) for r in rows)
+    except Exception:
+        pass
+
     # Generate PDF
-    pdf_buffer = PDFReceiptService.generate_receipt(payment, db)
+    pdf_buffer = PDFReceiptService.generate_receipt(payment, db, father_name=father_name, total_outstanding=total_outstanding)
 
     return StreamingResponse(
         pdf_buffer,
