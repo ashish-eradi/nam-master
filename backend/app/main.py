@@ -56,7 +56,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": exc.errors()},
     )
 
-from app.api.v1 import auth, schools, students, classes, subjects, attendance, finance, finance_extended, exams, announcements, messages, parents, library, transport, hostel, timetable, reports, dashboard, teachers, uploads, calendar, audit_logs, backups, role_dashboards, bulk_operations, licenses
+from app.api.v1 import auth, schools, students, classes, subjects, attendance, finance, finance_extended, exams, announcements, messages, parents, library, transport, hostel, timetable, reports, dashboard, teachers, uploads, calendar, audit_logs, backups, role_dashboards, bulk_operations, licenses, miscellaneous
 from app.api.v1 import users
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
@@ -75,6 +75,7 @@ app.include_router(parents.router, prefix="/api/v1/parents", tags=["parents"])
 app.include_router(library.router, prefix="/api/v1/library", tags=["library"])
 app.include_router(transport.router, prefix="/api/v1/transport", tags=["transport"])
 app.include_router(hostel.router, prefix="/api/v1/hostel", tags=["hostel"])
+app.include_router(miscellaneous.router, prefix="/api/v1/miscellaneous", tags=["miscellaneous"])
 app.include_router(timetable.router, prefix="/api/v1/timetable", tags=["timetable"])
 app.include_router(calendar.router, prefix="/api/v1/calendar", tags=["calendar"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"])

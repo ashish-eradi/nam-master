@@ -54,6 +54,7 @@ class School(Base):
     student_routes = relationship("StudentRoute", back_populates="school")
     vehicles = relationship("Vehicle", back_populates="school")
     hostels = relationship("Hostel", back_populates="school")
+    miscellaneous_fee_categories = relationship("MiscellaneousFeeCategory", back_populates="school")
     periods = relationship("Period", back_populates="school")
     timetable_entries = relationship("TimetableEntry", back_populates="school")
     calendar_events = relationship("CalendarEvent", back_populates="school")

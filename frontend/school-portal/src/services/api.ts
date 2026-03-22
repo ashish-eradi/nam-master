@@ -33,6 +33,6 @@ const baseQueryWithLicenseCheck: BaseQueryFn<string | FetchArgs, unknown, FetchB
 export const api = createApi({
   reducerPath: 'api',
   baseQuery: baseQueryWithLicenseCheck,
-  tagTypes: ['School', 'User', 'Student', 'Class', 'Subject', 'Attendance', 'Assessment', 'Grade', 'Fund', 'Fee', 'Payment', 'Salary', 'Exam', 'ExamMarks', 'Announcement', 'Message', 'Parent', 'Parents', 'Book', 'BookTransaction', 'Route', 'Vehicle', 'Hostel', 'HostelRoom', 'HostelAllocation', 'HostelFee', 'Period', 'TimetableEntry', 'Concession', 'Report', 'Timetable', 'Dashboard', 'Teacher', 'ClassFee', 'StudentFee', 'RouteFee', 'StudentRoute', 'FinanceReport', 'CalendarEvent'],
+  tagTypes: ['School', 'User', 'Student', 'Class', 'Subject', 'Attendance', 'Assessment', 'Grade', 'Fund', 'Fee', 'Payment', 'Salary', 'Exam', 'ExamMarks', 'Announcement', 'Message', 'Parent', 'Parents', 'Book', 'BookTransaction', 'Route', 'Vehicle', 'Hostel', 'HostelRoom', 'HostelAllocation', 'HostelFee', 'Period', 'TimetableEntry', 'Concession', 'Report', 'Timetable', 'Dashboard', 'Teacher', 'ClassFee', 'StudentFee', 'RouteFee', 'StudentRoute', 'FinanceReport', 'CalendarEvent', 'MiscellaneousFeeCategory', 'MiscellaneousFee'],
   endpoints: () => ({}),
 });

@@ -21,6 +21,7 @@ import Announcements from './pages/Announcements';
 import Timetable from './pages/Timetable';
 import Reports from './pages/Reports';
 import HostelPage from './pages/Hostel';
+import MiscellaneousFeesPage from './pages/MiscellaneousFees';
 import YearPlanner from './pages/YearPlanner';
 import Certificates from './pages/Certificates';
 import SMSNotifications from './pages/SMSNotifications';
@@ -55,6 +56,7 @@ function App() {
             <Route path="year-planner" element={<YearPlanner />} />
             <Route path="reports" element={<Reports />} />
             <Route path="hostel" element={<HostelPage />} />
+            <Route path="miscellaneous-fees" element={<MiscellaneousFeesPage />} />
             <Route path="certificates" element={<Certificates />} />
             <Route path="sms-notifications" element={<SMSNotifications />} />
           </Route>

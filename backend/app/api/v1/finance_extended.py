@@ -41,6 +41,11 @@ from app.models.hostel import (
     HostelFee as HostelFeeModel,
     Hostel as HostelModel
 )
+from app.models.miscellaneous import (
+    StudentMiscellaneousFeeStructure as StudentMiscellaneousFeeStructureModel,
+    MiscellaneousFee as MiscellaneousFeeModel,
+    MiscellaneousFeeCategory as MiscellaneousFeeCategoryModel
+)
 
 from app.schemas.finance_schema import (
     StudentLookup,
@@ -102,7 +107,10 @@ def lookup_students(
         hostel_outstanding = db.query(func.sum(StudentHostelFeeStructureModel.outstanding_amount)).filter(
             StudentHostelFeeStructureModel.student_id == student.id
         ).scalar() or 0
-        total_outstanding = class_outstanding + transport_outstanding + hostel_outstanding
+        misc_outstanding = db.query(func.sum(StudentMiscellaneousFeeStructureModel.outstanding_amount)).filter(
+            StudentMiscellaneousFeeStructureModel.student_id == student.id
+        ).scalar() or 0
+        total_outstanding = class_outstanding + transport_outstanding + hostel_outstanding + misc_outstanding
 
         # Get parent information
         parent_relation = db.query(ParentStudentRelationModel).join(
@@ -463,6 +471,16 @@ def get_student_ledger(
         hostel_query = hostel_query.filter(StudentHostelFeeStructureModel.academic_year == academic_year)
     hostel_fee_structures = hostel_query.all()
 
+    # Get miscellaneous fee structures
+    misc_query = db.query(StudentMiscellaneousFeeStructureModel).filter(
+        StudentMiscellaneousFeeStructureModel.student_id == student_id
+    ).options(
+        selectinload(StudentMiscellaneousFeeStructureModel.miscellaneous_fee).selectinload(MiscellaneousFeeModel.category)
+    )
+    if academic_year:
+        misc_query = misc_query.filter(StudentMiscellaneousFeeStructureModel.academic_year == academic_year)
+    misc_fee_structures = misc_query.all()
+
     # Get payment history
     payments = db.query(PaymentModel).filter(
         PaymentModel.student_id == student_id
@@ -497,16 +515,19 @@ def get_student_ledger(
     except Exception:
         pass  # audit_logs table may not exist yet; edit history is non-critical
 
-    # Calculate totals (including transport + hostel fees)
+    # Calculate totals (including transport + hostel + miscellaneous fees)
     total_expected = (sum(fs.final_amount for fs in fee_structures) +
                       sum(tfs.final_amount for tfs in transport_fee_structures) +
-                      sum(hfs.final_amount for hfs in hostel_fee_structures))
+                      sum(hfs.final_amount for hfs in hostel_fee_structures) +
+                      sum(mfs.final_amount for mfs in misc_fee_structures))
     total_paid = (sum(fs.amount_paid for fs in fee_structures) +
                   sum(tfs.amount_paid for tfs in transport_fee_structures) +
-                  sum(hfs.amount_paid for hfs in hostel_fee_structures))
+                  sum(hfs.amount_paid for hfs in hostel_fee_structures) +
+                  sum(mfs.amount_paid for mfs in misc_fee_structures))
     total_outstanding = (sum(fs.outstanding_amount for fs in fee_structures) +
                          sum(tfs.outstanding_amount for tfs in transport_fee_structures) +
-                         sum(hfs.outstanding_amount for hfs in hostel_fee_structures))
+                         sum(hfs.outstanding_amount for hfs in hostel_fee_structures) +
+                         sum(mfs.outstanding_amount for mfs in misc_fee_structures))
 
     # Build fee structures list with regular fees
     all_fee_structures = [{
@@ -543,6 +564,19 @@ def get_student_ledger(
             "final_amount": float(hfs.final_amount),
             "amount_paid": float(hfs.amount_paid),
             "outstanding_amount": float(hfs.outstanding_amount)
+        })
+
+    # Add miscellaneous fees
+    for mfs in misc_fee_structures:
+        category_name = mfs.miscellaneous_fee.category.name if mfs.miscellaneous_fee and mfs.miscellaneous_fee.category else "Miscellaneous"
+        all_fee_structures.append({
+            "id": str(mfs.id),
+            "fee_name": f"Misc Fee - {category_name}",
+            "total_amount": float(mfs.total_amount),
+            "discount_amount": float(mfs.discount_amount),
+            "final_amount": float(mfs.final_amount),
+            "amount_paid": float(mfs.amount_paid),
+            "outstanding_amount": float(mfs.outstanding_amount)
         })
 
     # Fetch previous-year arrears (outstanding fees from years OTHER than current)
@@ -649,11 +683,20 @@ def get_student_outstanding(
         selectinload(StudentHostelFeeStructureModel.hostel_fee).selectinload(HostelFeeModel.hostel)
     ).all()
 
-    # Calculate total outstanding (including transport + hostel fees)
+    # Get outstanding miscellaneous fees
+    misc_fee_structures = db.query(StudentMiscellaneousFeeStructureModel).filter(
+        StudentMiscellaneousFeeStructureModel.student_id == student_id,
+        StudentMiscellaneousFeeStructureModel.outstanding_amount > 0
+    ).options(
+        selectinload(StudentMiscellaneousFeeStructureModel.miscellaneous_fee).selectinload(MiscellaneousFeeModel.category)
+    ).all()
+
+    # Calculate total outstanding (including transport + hostel + miscellaneous fees)
     total_outstanding = (
         sum(fs.outstanding_amount for fs in fee_structures) +
         sum(tfs.outstanding_amount for tfs in transport_fee_structures) +
-        sum(hfs.outstanding_amount for hfs in hostel_fee_structures)
+        sum(hfs.outstanding_amount for hfs in hostel_fee_structures) +
+        sum(mfs.outstanding_amount for mfs in misc_fee_structures)
     )
 
     # Build by_fee list with regular fees
@@ -682,6 +725,16 @@ def get_student_outstanding(
             "fee_structure_id": str(hfs.id),
             "fee_name": f"Hostel Fee - {hostel_name}",
             "outstanding": float(hfs.outstanding_amount)
+        })
+
+    # Add miscellaneous fees
+    for mfs in misc_fee_structures:
+        category_name = mfs.miscellaneous_fee.category.name if mfs.miscellaneous_fee and mfs.miscellaneous_fee.category else "Miscellaneous"
+        by_fee_list.append({
+            "fee_id": None,
+            "fee_structure_id": str(mfs.id),
+            "fee_name": f"Misc Fee - {category_name}",
+            "outstanding": float(mfs.outstanding_amount)
         })
 
     # Check for overdue installments

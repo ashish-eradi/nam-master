@@ -26,6 +26,7 @@ import {
   ContainerOutlined,
   SafetyCertificateOutlined,
   MessageOutlined,
+  ShoppingOutlined,
 } from '@ant-design/icons';
 
 const { Sider } = Layout;
@@ -58,6 +59,7 @@ const Sidebar: React.FC = () => {
     if (path === '/year-planner') return '20';
     if (path === '/reports') return '12';
     if (path === '/hostel') return '14';
+    if (path === '/miscellaneous-fees') return '23';
     if (path === '/certificates') return '21';
     if (path === '/sms-notifications') return '22';
     return '1';
@@ -152,6 +154,11 @@ const Sidebar: React.FC = () => {
       key: '14',
       icon: <HomeOutlined />,
       label: <Link to="/hostel">Hostel</Link>,
+    },
+    {
+      key: '23',
+      icon: <ShoppingOutlined />,
+      label: <Link to="/miscellaneous-fees">Misc Fees</Link>,
     },
     {
       key: '10',
