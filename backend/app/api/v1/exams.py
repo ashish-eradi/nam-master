@@ -1088,6 +1088,16 @@ def download_report_card(
     else:
         overall_grade = "F"
 
+    # Get father name from parent relation
+    from app.models.parent import ParentStudentRelation as ParentStudentRelationModel
+    from sqlalchemy.orm import joinedload as _jl
+    father_name = None
+    p_rel = db.query(ParentStudentRelationModel).options(
+        _jl(ParentStudentRelationModel.parent)
+    ).filter(ParentStudentRelationModel.student_id == student_id).first()
+    if p_rel and p_rel.parent:
+        father_name = p_rel.parent.father_name
+
     # Get school info
     school = db.query(SchoolModel).filter(SchoolModel.id == ensure_uuid(school_id)).first()
     school_name = school.name if school else "School"
@@ -1097,7 +1107,7 @@ def download_report_card(
         student_name=f"{student.first_name} {student.last_name}",
         admission_number=student.admission_number,
         class_name=student.class_.name,
-        father_name=student.father_name,
+        father_name=father_name,
         exam_series_name=exam_series.name,
         exam_type=exam_series.exam_type,
         academic_year=exam_series.academic_year,
@@ -1172,6 +1182,18 @@ def download_class_report_cards(
         StudentExamMarksModel.exam_schedule_item_id.in_([item.id for item in schedule_items])
     ).all()
 
+    # Pre-fetch all father names in one query
+    from app.models.parent import ParentStudentRelation as ParentStudentRelationModel
+    from sqlalchemy.orm import joinedload as _jl
+    student_ids = [s.id for s in students]
+    parent_rels = db.query(ParentStudentRelationModel).options(
+        _jl(ParentStudentRelationModel.parent)
+    ).filter(ParentStudentRelationModel.student_id.in_(student_ids)).all()
+    father_names = {
+        str(r.student_id): r.parent.father_name
+        for r in parent_rels if r.parent and r.parent.father_name
+    }
+
     # Get school info
     school = db.query(SchoolModel).filter(SchoolModel.id == ensure_uuid(school_id)).first()
     school_name = school.name if school else "School"
@@ -1232,7 +1254,7 @@ def download_class_report_cards(
             student_name=f"{student.first_name} {student.last_name}",
             admission_number=student.admission_number,
             class_name=class_name,
-            father_name=student.father_name,
+            father_name=father_names.get(str(student.id)),
             exam_series_name=exam_series.name,
             exam_type=exam_series.exam_type,
             academic_year=exam_series.academic_year,
