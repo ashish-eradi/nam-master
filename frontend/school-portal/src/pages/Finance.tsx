@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { getCurrentAcademicYear, getAcademicYearOptions } from '../utils/academicYear';
 import { Tabs, Table, Button, Modal, Form, Input, InputNumber, DatePicker, Space, Popconfirm, Select, Card, Row, Col, message, AutoComplete } from 'antd';
 import { useSelector } from 'react-redux';
 import {
@@ -684,8 +685,7 @@ const Salaries: React.FC = () => {
 };
 
 const ClassFees: React.FC = () => {
-  const currentYear = new Date().getFullYear();
-  const [academicYear, setAcademicYear] = useState(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
 
   const { data: classes, isLoading: classesLoading } = useGetClassesQuery();
   const { data: fees, isLoading: feesLoading } = useGetFeesQuery();
@@ -965,14 +965,9 @@ const ClassFees: React.FC = () => {
           </Col>
           <Col>
             <Select value={academicYear} onChange={setAcademicYear} style={{ width: 120 }}>
-              {[0, 1, 2].map(offset => {
-                const year = currentYear - offset;
-                return (
-                  <Option key={year} value={`${year}-${String(year + 1).slice(-2)}`}>
-                    {year}-{String(year + 1).slice(-2)}
-                  </Option>
-                );
-              })}
+              {getAcademicYearOptions(2, 1).map(y => (
+                <Option key={y} value={y}>{y}</Option>
+              ))}
             </Select>
           </Col>
           <Col>
@@ -1001,8 +996,7 @@ const StudentFeeAssignment: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [selectedClassFees, setSelectedClassFees] = useState<string[]>([]);
-  const currentYear = new Date().getFullYear();
-  const [academicYear, setAcademicYear] = useState(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
 
   const { data: students } = useSearchStudentsQuery(searchTerm, { skip: !searchTerm });
   const { data: studentLedger, refetch } = useGetStudentLedgerQuery(
@@ -1054,11 +1048,7 @@ const StudentFeeAssignment: React.FC = () => {
             onChange={setAcademicYear}
             style={{ width: '100%' }}
           >
-            {[-2, -1, 0, 1].map(offset => {
-              const y = currentYear + offset;
-              const label = `${y}-${String(y + 1).slice(-2)}`;
-              return <Option key={label} value={label}>{label}</Option>;
-            })}
+            {getAcademicYearOptions(2, 1).map(y => <Option key={y} value={y}>{y}</Option>)}
           </Select>
         </Col>
       </Row>
@@ -1146,8 +1136,7 @@ const StudentFeeAssignment: React.FC = () => {
 // Bulk Class Fee Assignment Component
 const BulkClassFeeAssignment: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<string | undefined>(undefined);
-  const currentYear = new Date().getFullYear();
-  const [academicYear, setAcademicYear] = useState(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
 
   const { data: classes } = useGetClassesQuery();
   const { data: classFees } = useGetClassFeesQuery({ academic_year: academicYear });

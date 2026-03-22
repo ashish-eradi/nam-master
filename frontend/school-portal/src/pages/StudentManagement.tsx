@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getCurrentAcademicYear, getAcademicYearOptions } from '../utils/academicYear';
 import {
   Table,
   Button,
@@ -74,8 +75,7 @@ const StudentManagement: React.FC = () => {
   const [demoteTargetClassId, setDemoteTargetClassId] = useState<string>('');
   const [excludedStudents, setExcludedStudents] = useState<string[]>([]);
   const [demotedStudents, setDemotedStudents] = useState<string[]>([]);
-  const currentYear = new Date().getFullYear();
-  const [newAcademicYear, setNewAcademicYear] = useState<string>(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
+  const [newAcademicYear, setNewAcademicYear] = useState<string>(getCurrentAcademicYear());
 
   // Get payments and grades for selected student
   const { data: payments = [] } = useGetStudentPaymentsQuery(selectedStudent?.id || '', {
@@ -103,7 +103,7 @@ const StudentManagement: React.FC = () => {
     setDemoteTargetClassId('');
     setExcludedStudents([]);
     setDemotedStudents([]);
-    setNewAcademicYear(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
+    setNewAcademicYear(getCurrentAcademicYear());
     setIsBulkPromoteModalOpen(true);
   };
 
@@ -559,14 +559,7 @@ const StudentManagement: React.FC = () => {
                   value={newAcademicYear}
                   onChange={setNewAcademicYear}
                 >
-                  {[0, 1, 2].map(offset => {
-                    const y = currentYear + offset;
-                    return (
-                      <Option key={y} value={`${y}-${String(y + 1).slice(-2)}`}>
-                        {y}-{String(y + 1).slice(-2)}
-                      </Option>
-                    );
-                  })}
+                  {getAcademicYearOptions(1, 2).map(y => <Option key={y} value={y}>{y}</Option>)}
                 </Select>
               </Col>
             </Row>

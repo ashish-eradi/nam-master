@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { getCurrentAcademicYear, getAcademicYearOptions } from '../utils/academicYear';
 import { Card, Select, Table, Button, Input, Checkbox, message, Space, Tag, Tabs } from 'antd';
 import { SaveOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useSelector } from 'react-redux';
@@ -21,7 +22,7 @@ const { Option } = Select;
 const MarksEntry: React.FC = () => {
   const { school_id: schoolId } = useSelector((state: RootState) => state.auth.user || {});
 
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState('2025-26');
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState(getCurrentAcademicYear());
   const [selectedSeriesId, setSelectedSeriesId] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
@@ -260,9 +261,7 @@ const MarksEntry: React.FC = () => {
           <div>
             <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>Academic Year</label>
             <Select value={selectedAcademicYear} onChange={setSelectedAcademicYear} style={{ width: '100%' }}>
-              <Option value="2024-25">2024-25</Option>
-              <Option value="2025-26">2025-26</Option>
-              <Option value="2026-27">2026-27</Option>
+              {getAcademicYearOptions(2, 1).map(y => <Option key={y} value={y}>{y}</Option>)}
             </Select>
           </div>
 

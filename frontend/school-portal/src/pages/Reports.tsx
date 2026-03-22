@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getCurrentAcademicYear } from '../utils/academicYear';
 import { Card, Row, Col, Button, Select, DatePicker, Space, Tabs, Table, Statistic, Progress, message, Spin } from 'antd';
 import {
   DownloadOutlined,
@@ -344,7 +345,7 @@ const Reports: React.FC = () => {
               <Card>
                 <Statistic
                   title="Academic Year"
-                  value="2024-25"
+                  value={getCurrentAcademicYear()}
                   prefix={<FileTextOutlined />}
                 />
               </Card>
