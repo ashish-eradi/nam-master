@@ -52,7 +52,8 @@ const StudentManagement: React.FC = () => {
   const [bulkImportStudents] = useBulkImportStudentsMutation();
   const [exportStudents] = useLazyExportStudentsQuery();
 
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const selectedStudent = selectedStudentId ? (students?.find(s => s.id === selectedStudentId) ?? null) : null;
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isBulkPromoteModalOpen, setIsBulkPromoteModalOpen] = useState(false);
@@ -86,12 +87,12 @@ const StudentManagement: React.FC = () => {
   });
 
   const showDetailModal = (student: Student) => {
-    setSelectedStudent(student);
+    setSelectedStudentId(student.id);
     setIsDetailModalOpen(true);
   };
 
   const showTransferModal = (student: Student) => {
-    setSelectedStudent(student);
+    setSelectedStudentId(student.id);
     setTransferClassId('');
     setIsTransferModalOpen(true);
   };
@@ -107,7 +108,7 @@ const StudentManagement: React.FC = () => {
   };
 
   const showRollNumberModal = (student: Student) => {
-    setSelectedStudent(student);
+    setSelectedStudentId(student.id);
     setRollNumberAssignmentType('AUTO_NORMAL');
     setManualRollNumber('');
     setIsRollNumberModalOpen(true);
@@ -255,6 +256,11 @@ const StudentManagement: React.FC = () => {
       title: 'Class',
       dataIndex: ['class_', 'name'],
       key: 'class',
+    },
+    {
+      title: 'Academic Year',
+      dataIndex: 'academic_year',
+      key: 'academic_year',
     },
     {
       title: 'Gender',

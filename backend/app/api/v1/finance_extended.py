@@ -841,9 +841,9 @@ def download_payment_receipt(
         PaymentModel.id == payment_id,
         PaymentModel.school_id == school_id
     ).options(
-        selectinload(PaymentModel.student),
+        selectinload(PaymentModel.student).selectinload(StudentModel.class_),
         selectinload(PaymentModel.fund),
-        selectinload(PaymentModel.payment_details),
+        selectinload(PaymentModel.payment_details).selectinload(PaymentDetailModel.fee),
         selectinload(PaymentModel.received_by),
         selectinload(PaymentModel.school)
     ).first()
