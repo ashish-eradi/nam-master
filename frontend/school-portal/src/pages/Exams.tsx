@@ -15,6 +15,7 @@ import {
   useLazyDownloadAdmitCardQuery,
   useLazyDownloadClassAdmitCardsQuery,
   useLazyDownloadReportCardQuery,
+  useLazyDownloadClassReportCardsQuery,
   useLazyGetStudentMarksSheetQuery,
   ExamType,
   type ExamSeries,
@@ -76,6 +77,8 @@ const Exams: React.FC = () => {
   const [downloadAdmitCard] = useLazyDownloadAdmitCardQuery();
   const [downloadClassAdmitCards] = useLazyDownloadClassAdmitCardsQuery();
   const [downloadReportCard] = useLazyDownloadReportCardQuery();
+  const [downloadClassReportCards] = useLazyDownloadClassReportCardsQuery();
+  const [bulkReportCardLoading, setBulkReportCardLoading] = useState(false);
 
   // View Timetables
   const [isTimetablesViewModalVisible, setIsTimetablesViewModalVisible] = useState(false);
@@ -597,9 +600,41 @@ const Exams: React.FC = () => {
                     <div>
                       <strong>{studentResults.length}</strong> students
                     </div>
-                    <Tag color="blue">
-                      {examSeries?.find(s => s.id === resultsSeriesId)?.name}
-                    </Tag>
+                    <Space>
+                      <Tag color="blue">
+                        {examSeries?.find(s => s.id === resultsSeriesId)?.name}
+                      </Tag>
+                      <Button
+                        type="primary"
+                        icon={<DownloadOutlined />}
+                        loading={bulkReportCardLoading}
+                        onClick={async () => {
+                          if (!resultsSeriesId || !resultsClassId) return;
+                          setBulkReportCardLoading(true);
+                          try {
+                            const pdfBlob = await downloadClassReportCards({
+                              exam_series_id: resultsSeriesId,
+                              class_id: resultsClassId,
+                            }).unwrap();
+                            const url = window.URL.createObjectURL(pdfBlob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            const seriesName = examSeries?.find(s => s.id === resultsSeriesId)?.name || 'exam';
+                            const className = classes?.find((c: any) => c.id === resultsClassId)?.name || 'class';
+                            a.download = `report_cards_${className}_${seriesName}.pdf`.replace(/\s+/g, '_');
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            message.success('All report cards downloaded!');
+                          } catch (error: any) {
+                            message.error('Failed to download report cards');
+                          } finally {
+                            setBulkReportCardLoading(false);
+                          }
+                        }}
+                      >
+                        Download All Report Cards
+                      </Button>
+                    </Space>
                   </div>
                   <Table
                     dataSource={studentResults}

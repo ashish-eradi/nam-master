@@ -1119,3 +1119,148 @@ def download_report_card(
             "Content-Disposition": f"attachment; filename=report_card_{student.admission_number}_{exam_series.name.replace(' ', '_')}.pdf"
         }
     )
+
+
+@router.get("/report-cards/exam-series/{exam_series_id}/class/{class_id}/download-all", dependencies=[Depends(is_admin_or_teacher)])
+def download_class_report_cards(
+    exam_series_id: uuid.UUID,
+    class_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Generate and download report cards for all students in a class as a merged PDF."""
+    from app.services.report_card_service import ReportCardService
+    from app.models.school import School as SchoolModel
+    from PyPDF2 import PdfMerger
+    from io import BytesIO
+
+    # Get all students in the class
+    students = tenant_aware_query(db, StudentModel, school_id).options(
+        selectinload(StudentModel.class_)
+    ).filter(StudentModel.class_id == class_id).order_by(StudentModel.admission_number).all()
+
+    if not students:
+        raise HTTPException(status_code=404, detail="No students found in this class")
+
+    exam_series = tenant_aware_query(db, ExamSeriesModel, school_id).filter(
+        ExamSeriesModel.id == exam_series_id
+    ).first()
+
+    if not exam_series:
+        raise HTTPException(status_code=404, detail="Exam series not found")
+
+    timetable = db.query(ExamTimetableModel).filter(
+        ExamTimetableModel.exam_series_id == exam_series_id,
+        ExamTimetableModel.class_id == class_id
+    ).first()
+
+    if not timetable:
+        raise HTTPException(
+            status_code=404,
+            detail="No timetable found for this class in this exam series"
+        )
+
+    # Pre-fetch all schedule items with subjects once
+    schedule_items = db.query(ExamScheduleItemModel).options(
+        selectinload(ExamScheduleItemModel.subject)
+    ).filter(
+        ExamScheduleItemModel.exam_timetable_id == timetable.id
+    ).all()
+
+    # Pre-fetch all marks for the class in one query
+    all_marks = db.query(StudentExamMarksModel).filter(
+        StudentExamMarksModel.exam_schedule_item_id.in_([item.id for item in schedule_items])
+    ).all()
+
+    # Get school info
+    school = db.query(SchoolModel).filter(SchoolModel.id == ensure_uuid(school_id)).first()
+    school_name = school.name if school else "School"
+
+    class_name = students[0].class_.name if students else "class"
+
+    # Merge PDFs for all students
+    merger = PdfMerger()
+    generated_count = 0
+
+    for student in students:
+        student_marks = [m for m in all_marks if m.student_id == student.id]
+
+        marks_data = []
+        total_marks_obtained = 0.0
+        total_max_marks = 0.0
+
+        for item in sorted(schedule_items, key=lambda x: x.subject.name):
+            total_max_marks += float(item.max_marks)
+            mark = next((m for m in student_marks if m.exam_schedule_item_id == item.id), None)
+            if mark:
+                marks_data.append({
+                    'subject_name': item.subject.name,
+                    'max_marks': float(item.max_marks),
+                    'marks_obtained': float(mark.marks_obtained) if mark.marks_obtained else 0,
+                    'grade': mark.grade_letter or '-',
+                    'is_absent': mark.is_absent
+                })
+                if not mark.is_absent and mark.marks_obtained:
+                    total_marks_obtained += float(mark.marks_obtained)
+            else:
+                marks_data.append({
+                    'subject_name': item.subject.name,
+                    'max_marks': float(item.max_marks),
+                    'marks_obtained': 0,
+                    'grade': '-',
+                    'is_absent': False
+                })
+
+        percentage = (total_marks_obtained / total_max_marks * 100) if total_max_marks > 0 else 0
+
+        if percentage >= 90:
+            overall_grade = "A+"
+        elif percentage >= 80:
+            overall_grade = "A"
+        elif percentage >= 70:
+            overall_grade = "B+"
+        elif percentage >= 60:
+            overall_grade = "B"
+        elif percentage >= 50:
+            overall_grade = "C"
+        elif percentage >= 40:
+            overall_grade = "D"
+        else:
+            overall_grade = "F"
+
+        pdf_buffer = ReportCardService.generate_report_card(
+            student_name=f"{student.first_name} {student.last_name}",
+            admission_number=student.admission_number,
+            class_name=class_name,
+            father_name=student.father_name,
+            exam_series_name=exam_series.name,
+            exam_type=exam_series.exam_type,
+            academic_year=exam_series.academic_year,
+            marks_data=marks_data,
+            total_marks_obtained=total_marks_obtained,
+            total_max_marks=total_max_marks,
+            percentage=percentage,
+            overall_grade=overall_grade,
+            attendance_percentage=None,
+            teacher_remarks=None,
+            school_name=school_name,
+            school_logo_path=None
+        )
+        merger.append(pdf_buffer)
+        generated_count += 1
+
+    if generated_count == 0:
+        raise HTTPException(status_code=404, detail="No report cards could be generated")
+
+    merged_buffer = BytesIO()
+    merger.write(merged_buffer)
+    merger.close()
+    merged_buffer.seek(0)
+
+    return StreamingResponse(
+        merged_buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=report_cards_{class_name.replace(' ', '_')}_{exam_series.name.replace(' ', '_')}.pdf"
+        }
+    )

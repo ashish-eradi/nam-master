@@ -326,6 +326,12 @@ export const examApi = api.injectEndpoints({
         responseHandler: (response) => response.blob(),
       }),
     }),
+    downloadClassReportCards: builder.query<Blob, { exam_series_id: string; class_id: string }>({
+      query: ({ exam_series_id, class_id }) => ({
+        url: `exams/report-cards/exam-series/${exam_series_id}/class/${class_id}/download-all`,
+        responseHandler: (response) => response.blob(),
+      }),
+    }),
   }),
 });
 
@@ -357,4 +363,5 @@ export const {
   useLazyDownloadAdmitCardQuery,
   useLazyDownloadClassAdmitCardsQuery,
   useLazyDownloadReportCardQuery,
+  useLazyDownloadClassReportCardsQuery,
 } = examApi;
