@@ -929,8 +929,21 @@ def download_payment_receipt(
     except Exception:
         pass
 
+    # Load school print settings
+    print_settings = {}
+    try:
+        from app.models.school import School as SchoolModel
+        school_obj = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
+        if school_obj and school_obj.settings:
+            print_settings = school_obj.settings.get('print', {})
+    except Exception:
+        pass
+
     # Generate PDF
-    pdf_buffer = PDFReceiptService.generate_receipt(payment, db, father_name=father_name, total_outstanding=total_outstanding)
+    pdf_buffer = PDFReceiptService.generate_receipt(
+        payment, db, father_name=father_name, total_outstanding=total_outstanding,
+        print_settings=print_settings
+    )
 
     return StreamingResponse(
         pdf_buffer,
@@ -1464,11 +1477,22 @@ def generate_fee_due_slip(
         'academic_year': academic_year or '2025-26'
     }
 
+    # Load school print settings
+    print_settings = {}
+    try:
+        from app.models.school import School as SchoolModel
+        school_obj = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
+        if school_obj and school_obj.settings:
+            print_settings = school_obj.settings.get('print', {})
+    except Exception:
+        pass
+
     # Generate PDF
     pdf_buffer = PDFReceiptService.generate_fee_due_slip(
         student_data=student_data,
         outstanding_data=outstanding,
-        installments=overdue_data
+        installments=overdue_data,
+        print_settings=print_settings
     )
 
     # Return as downloadable PDF
@@ -1525,3 +1549,47 @@ def generate_bulk_fee_due_slips(
         })
 
     return result
+
+
+# --- Print Settings ---
+
+from app.services.pdf_service import DEFAULT_PRINT_SETTINGS as _DEFAULT_PRINT_SETTINGS
+
+@router.get("/print-settings", dependencies=[Depends(is_admin)])
+def get_print_settings(
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Get school's print settings for receipts and fee due slips."""
+    from app.models.school import School as SchoolModel
+    school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    settings = school.settings or {}
+    saved = settings.get('print', {})
+    # Merge with defaults so all keys are always present
+    result = {}
+    for doc_type in ('receipt', 'fee_due'):
+        defaults = _DEFAULT_PRINT_SETTINGS.get(doc_type, {})
+        result[doc_type] = {**defaults, **saved.get(doc_type, {})}
+    return result
+
+
+@router.put("/print-settings", dependencies=[Depends(is_admin)])
+def update_print_settings(
+    body: dict,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Update school's print settings for receipts and fee due slips."""
+    from app.models.school import School as SchoolModel
+    from sqlalchemy.orm.attributes import flag_modified
+    school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    current = dict(school.settings or {})
+    current['print'] = body
+    school.settings = current
+    flag_modified(school, 'settings')
+    db.commit()
+    return body

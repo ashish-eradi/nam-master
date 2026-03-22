@@ -258,6 +258,20 @@ export const financeApi = api.injectEndpoints({
       }),
     }),
 
+    // Print Settings
+    getPrintSettings: builder.query<any, void>({
+      query: () => 'finance-extended/print-settings',
+      providesTags: ['PrintSettings' as any],
+    }),
+    updatePrintSettings: builder.mutation<any, any>({
+      query: (body) => ({
+        url: 'finance-extended/print-settings',
+        method: 'PUT',
+        body,
+      }),
+      invalidatesTags: ['PrintSettings' as any],
+    }),
+
     // Bulk Operations
     bulkCreatePayments: builder.mutation<{ message: string; created_count: number }, BulkPaymentCreate>({
       query: (body) => ({
@@ -399,4 +413,7 @@ export const {
   useGetInstallmentStatusQuery,
   // All students outstanding
   useGetAllStudentOutstandingQuery,
+  // Print settings
+  useGetPrintSettingsQuery,
+  useUpdatePrintSettingsMutation,
 } = financeApi;
