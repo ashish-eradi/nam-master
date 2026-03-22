@@ -1001,7 +1001,8 @@ const StudentFeeAssignment: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [selectedClassFees, setSelectedClassFees] = useState<string[]>([]);
-  const [academicYear, setAcademicYear] = useState('2024-25');
+  const currentYear = new Date().getFullYear();
+  const [academicYear, setAcademicYear] = useState(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
 
   const { data: students } = useSearchStudentsQuery(searchTerm, { skip: !searchTerm });
   const { data: studentLedger, refetch } = useGetStudentLedgerQuery(
@@ -1053,9 +1054,11 @@ const StudentFeeAssignment: React.FC = () => {
             onChange={setAcademicYear}
             style={{ width: '100%' }}
           >
-            <Option value="2023-24">2023-24</Option>
-            <Option value="2024-25">2024-25</Option>
-            <Option value="2025-26">2025-26</Option>
+            {[-2, -1, 0, 1].map(offset => {
+              const y = currentYear + offset;
+              const label = `${y}-${String(y + 1).slice(-2)}`;
+              return <Option key={label} value={label}>{label}</Option>;
+            })}
           </Select>
         </Col>
       </Row>
@@ -1143,7 +1146,8 @@ const StudentFeeAssignment: React.FC = () => {
 // Bulk Class Fee Assignment Component
 const BulkClassFeeAssignment: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<string | undefined>(undefined);
-  const [academicYear, setAcademicYear] = useState('2024-25');
+  const currentYear = new Date().getFullYear();
+  const [academicYear, setAcademicYear] = useState(`${currentYear}-${String(currentYear + 1).slice(-2)}`);
 
   const { data: classes } = useGetClassesQuery();
   const { data: classFees } = useGetClassFeesQuery({ academic_year: academicYear });
@@ -1232,9 +1236,11 @@ const BulkClassFeeAssignment: React.FC = () => {
               size="large"
               style={{ width: '100%' }}
             >
-              <Option value="2023-24">2023-24</Option>
-              <Option value="2024-25">2024-25</Option>
-              <Option value="2025-26">2025-26</Option>
+              {[-2, -1, 0, 1].map(offset => {
+                const y = currentYear + offset;
+                const label = `${y}-${String(y + 1).slice(-2)}`;
+                return <Option key={label} value={label}>{label}</Option>;
+              })}
             </Select>
           </Col>
         </Row>
