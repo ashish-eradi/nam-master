@@ -86,6 +86,12 @@ const Exams: React.FC = () => {
   const [viewingSeriesId, setViewingSeriesId] = useState<string | null>(null);
   const [getTimetablesForSeries] = useLazyGetTimetablesForSeriesQuery();
 
+  // Timetables for results tab (needed for CSV subject names)
+  const { data: resultsTimetablesData } = useGetTimetablesForSeriesQuery(
+    resultsSeriesId!,
+    { skip: !resultsSeriesId }
+  );
+
   // Exam Series Functions
   const showSeriesModal = (series: ExamSeries | null = null) => {
     setEditingSeries(series);
@@ -381,6 +387,60 @@ const Exams: React.FC = () => {
     },
   ];
 
+  // Download exam results as CSV
+  const handleDownloadResultsCSV = () => {
+    if (!studentResults.length) return;
+    const selectedTimetable = resultsTimetablesData?.find((t: any) => t.class_id === resultsClassId);
+    const scheduleItems: any[] = selectedTimetable?.schedule_items || [];
+
+    // Build header row
+    const subjectHeaders: string[] = [];
+    scheduleItems.forEach((item: any) => {
+      subjectHeaders.push(`${item.subject_name} (Marks)`);
+      subjectHeaders.push(`${item.subject_name} (Grade)`);
+    });
+    const headers = ['Roll No', 'Admission No', 'Student Name', ...subjectHeaders, 'Total Marks', 'Max Marks', 'Percentage', 'Overall Grade'];
+
+    // Build data rows
+    const rows = studentResults.map((r: any) => {
+      const subjectCells: string[] = [];
+      scheduleItems.forEach((item: any) => {
+        const mark = r.marks.find((m: any) => m.exam_schedule_item_id === item.id);
+        if (!mark) {
+          subjectCells.push('-', '-');
+        } else if (mark.is_absent) {
+          subjectCells.push('Absent', '-');
+        } else {
+          subjectCells.push(mark.marks_obtained != null ? String(mark.marks_obtained) : '-', mark.grade_letter || '-');
+        }
+      });
+      return [
+        r.roll_number || '-',
+        r.admission_number || '-',
+        r.student_name,
+        ...subjectCells,
+        String(r.total_marks_obtained),
+        String(r.total_max_marks),
+        `${r.percentage.toFixed(2)}%`,
+        r.overall_grade || '-',
+      ];
+    });
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.map((cell: string) => `"${cell.replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const seriesName = examSeries?.find(s => s.id === resultsSeriesId)?.name || 'exam';
+    const className = classes?.find((c: any) => c.id === resultsClassId)?.name || 'class';
+    a.download = `results_${className}_${seriesName}.csv`.replace(/\s+/g, '_');
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Get unique subjects from first student's marks to build dynamic columns
   const getResultsColumns = () => {
     const baseColumns: any[] = [
@@ -632,6 +692,12 @@ const Exams: React.FC = () => {
                         }}
                       >
                         Download All Report Cards
+                      </Button>
+                      <Button
+                        icon={<DownloadOutlined />}
+                        onClick={handleDownloadResultsCSV}
+                      >
+                        Download CSV
                       </Button>
                     </Space>
                   </div>
