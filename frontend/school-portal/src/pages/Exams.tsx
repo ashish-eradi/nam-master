@@ -399,7 +399,11 @@ const Exams: React.FC = () => {
       subjectHeaders.push(`${item.subject_name} (Marks)`);
       subjectHeaders.push(`${item.subject_name} (Grade)`);
     });
-    const headers = ['Roll No', 'Admission No', 'Student Name', ...subjectHeaders, 'Total Marks', 'Max Marks', 'Percentage', 'Overall Grade'];
+    const selectedClass = classes?.find((c: any) => c.id === resultsClassId);
+    const classLabel = selectedClass ? selectedClass.name : '-';
+    const sectionLabel = selectedClass ? selectedClass.section : '-';
+
+    const headers = ['Roll No', 'Admission No', 'Student Name', 'Class', 'Section', ...subjectHeaders, 'Total Marks', 'Max Marks', 'Percentage', 'Overall Grade'];
 
     // Build data rows
     const rows = studentResults.map((r: any) => {
@@ -418,6 +422,8 @@ const Exams: React.FC = () => {
         r.roll_number || '-',
         r.admission_number || '-',
         r.student_name,
+        classLabel,
+        sectionLabel,
         ...subjectCells,
         String(r.total_marks_obtained),
         String(r.total_max_marks),
