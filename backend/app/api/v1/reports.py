@@ -222,6 +222,7 @@ def get_defaulters_report(
         Student.first_name,
         Student.last_name,
         ClassModel.name.label('class_name'),
+        ClassModel.section.label('section'),
         func.sum(StudentFeeStructureModel.final_amount).label('school_fee_total'),
         func.sum(StudentFeeStructureModel.amount_paid).label('school_fee_paid'),
         func.sum(StudentFeeStructureModel.outstanding_amount).label('school_fee_outstanding')
@@ -238,7 +239,8 @@ def get_defaulters_report(
         Student.admission_number,
         Student.first_name,
         Student.last_name,
-        ClassModel.name
+        ClassModel.name,
+        ClassModel.section
     ).all()
 
     # If including transport fees, also query transport outstanding
@@ -309,6 +311,7 @@ def get_defaulters_report(
                             'first_name': student.first_name,
                             'last_name': student.last_name,
                             'class_name': student.class_.name if student.class_ else 'N/A',
+                            'section': student.class_.section if student.class_ else None,
                             'school_fee_outstanding': 0
                         })(),
                         'total_outstanding': transport_out,
@@ -370,6 +373,7 @@ def get_defaulters_report(
             admission_number=student_data.admission_number,
             student_name=student_name,
             class_name=student_data.class_name,
+            section=getattr(student_data, 'section', None),
             total_fees=student_info.get('total_fees', 0),
             total_paid=student_info.get('total_paid', 0),
             total_outstanding=float(outstanding),

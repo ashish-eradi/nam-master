@@ -194,6 +194,12 @@ const DefaultersReport: React.FC = () => {
       key: 'class_name',
     },
     {
+      title: 'Section',
+      dataIndex: 'section',
+      key: 'section',
+      render: (s: string) => s || '-',
+    },
+    {
       title: 'Paid',
       dataIndex: 'total_paid',
       key: 'total_paid',
@@ -252,11 +258,11 @@ const DefaultersReport: React.FC = () => {
 
   const columnsAll = [...baseColumns, routeColumn];
   const columnsBus = [
-    baseColumns[0], baseColumns[1], baseColumns[2], baseColumns[3],
+    baseColumns[0], baseColumns[1], baseColumns[2], baseColumns[3], baseColumns[4],
     routeColumn,
     busOutstandingColumn,
-    baseColumns[5], // outstanding (total)
-    baseColumns[8], // contact
+    baseColumns[6], // outstanding (total)
+    baseColumns[9], // contact
   ];
 
   const [duesTab, setDuesTab] = useState('all');
@@ -268,11 +274,11 @@ const DefaultersReport: React.FC = () => {
     if (!activeStudents.length) return;
     const isBus = duesTab === 'bus';
     const headers = isBus
-      ? ['Admission No.', 'Student Name', 'Father Name', 'Class', 'Bus Route', 'Bus Due', 'Total Outstanding', 'Contact']
-      : ['Admission No.', 'Student Name', 'Father Name', 'Class', 'Bus Route', 'Total Paid', 'Outstanding', 'Overdue Installments', 'Oldest Due Date', 'Contact'];
+      ? ['Admission No.', 'Student Name', 'Father Name', 'Class', 'Section', 'Bus Route', 'Bus Due', 'Total Outstanding', 'Contact']
+      : ['Admission No.', 'Student Name', 'Father Name', 'Class', 'Section', 'Bus Route', 'Total Paid', 'Outstanding', 'Overdue Installments', 'Oldest Due Date', 'Contact'];
     const rows = activeStudents.map((s: any) => isBus
-      ? [s.admission_number, s.student_name, s.father_name || '', s.class_name, s.route_name || '', s.transport_outstanding || 0, s.total_outstanding, s.parent_phone || '']
-      : [s.admission_number, s.student_name, s.father_name || '', s.class_name, s.route_name || '', s.total_paid || 0, s.total_outstanding, s.overdue_installments, s.oldest_due_date || '', s.parent_phone || '']
+      ? [s.admission_number, s.student_name, s.father_name || '', s.class_name, s.section || '', s.route_name || '', s.transport_outstanding || 0, s.total_outstanding, s.parent_phone || '']
+      : [s.admission_number, s.student_name, s.father_name || '', s.class_name, s.section || '', s.route_name || '', s.total_paid || 0, s.total_outstanding, s.overdue_installments, s.oldest_due_date || '', s.parent_phone || '']
     );
     const csv = [headers, ...rows].map(row => row.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -288,12 +294,12 @@ const DefaultersReport: React.FC = () => {
     if (!activeStudents.length) return;
     const isBus = duesTab === 'bus';
     const tableRows = activeStudents.map((s: any) => isBus
-      ? `<tr><td>${s.admission_number}</td><td>${s.student_name}</td><td>${s.father_name || '-'}</td><td>${s.class_name}</td><td>${s.route_name || '-'}</td><td>₹${(s.transport_outstanding || 0).toLocaleString()}</td><td>₹${s.total_outstanding.toLocaleString()}</td><td>${s.parent_phone || '-'}</td></tr>`
-      : `<tr><td>${s.admission_number}</td><td>${s.student_name}</td><td>${s.father_name || '-'}</td><td>${s.class_name}</td><td>${s.route_name || '-'}</td><td>₹${(s.total_paid || 0).toLocaleString()}</td><td>₹${s.total_outstanding.toLocaleString()}</td><td>${s.overdue_installments}</td><td>${s.oldest_due_date || '-'}</td><td>${s.parent_phone || '-'}</td></tr>`
+      ? `<tr><td>${s.admission_number}</td><td>${s.student_name}</td><td>${s.father_name || '-'}</td><td>${s.class_name}</td><td>${s.section || '-'}</td><td>${s.route_name || '-'}</td><td>₹${(s.transport_outstanding || 0).toLocaleString()}</td><td>₹${s.total_outstanding.toLocaleString()}</td><td>${s.parent_phone || '-'}</td></tr>`
+      : `<tr><td>${s.admission_number}</td><td>${s.student_name}</td><td>${s.father_name || '-'}</td><td>${s.class_name}</td><td>${s.section || '-'}</td><td>${s.route_name || '-'}</td><td>₹${(s.total_paid || 0).toLocaleString()}</td><td>₹${s.total_outstanding.toLocaleString()}</td><td>${s.overdue_installments}</td><td>${s.oldest_due_date || '-'}</td><td>${s.parent_phone || '-'}</td></tr>`
     ).join('');
     const headers = isBus
-      ? '<th>Adm No.</th><th>Student Name</th><th>Father Name</th><th>Class</th><th>Bus Route</th><th>Bus Due</th><th>Total Outstanding</th><th>Contact</th>'
-      : '<th>Adm No.</th><th>Student Name</th><th>Father Name</th><th>Class</th><th>Bus Route</th><th>Paid</th><th>Outstanding</th><th>Overdue</th><th>Oldest Due</th><th>Contact</th>';
+      ? '<th>Adm No.</th><th>Student Name</th><th>Father Name</th><th>Class</th><th>Section</th><th>Bus Route</th><th>Bus Due</th><th>Total Outstanding</th><th>Contact</th>'
+      : '<th>Adm No.</th><th>Student Name</th><th>Father Name</th><th>Class</th><th>Section</th><th>Bus Route</th><th>Paid</th><th>Outstanding</th><th>Overdue</th><th>Oldest Due</th><th>Contact</th>';
     const title = duesTab === 'bus' ? 'Bus Fee Dues' : duesTab === 'school' ? 'School Fee Dues' : 'All Fee Dues';
     const html = `<html><head><title>${title} - ${academicYear}</title>
       <style>body{font-family:Arial,sans-serif;font-size:12px}h2{text-align:center}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}th{background:#f0f0f0;font-weight:bold}</style>

@@ -26,6 +26,7 @@ class DefaulterStudent(BaseModel):
     admission_number: str
     student_name: str
     class_name: str
+    section: Optional[str] = None
     total_fees: float = 0
     total_paid: float = 0
     total_outstanding: float
