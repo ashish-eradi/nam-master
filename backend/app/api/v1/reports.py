@@ -12,6 +12,7 @@ from app.models.student import Student
 from app.models.user import User
 from app.models.class_model import Class as ClassModel
 from app.models.teacher import Teacher as TeacherModel
+from app.models.parent import ParentStudentRelation, Parent as ParentModel
 from app.schemas.report_schema import (
     CollectionSummary, CollectionSummaryItem,
     DefaultersReport, DefaulterStudent,
@@ -595,9 +596,11 @@ def download_daily_collection_pdf(
     school_name = school.name if school else "School"
     school_address = getattr(school, 'address', '') or ''
 
+    from sqlalchemy.orm import selectinload
     payments = db.query(PaymentModel).options(
         joinedload(PaymentModel.fund),
-        joinedload(PaymentModel.student)
+        joinedload(PaymentModel.student).joinedload(Student.class_),
+        joinedload(PaymentModel.student).selectinload(Student.parents).joinedload(ParentStudentRelation.parent),
     ).filter(
         PaymentModel.payment_date == collection_date,
         PaymentModel.school_id == school_id
@@ -667,7 +670,7 @@ def download_daily_collection_pdf(
 
     y -= 0.85 * inch
 
-    def draw_table(title, data, col_names, col_widths):
+    def draw_table(title, data, col_names, col_widths, header_fs=10, body_fs=9):
         nonlocal y
         pdf.setFont("Helvetica-Bold", 11)
         pdf.drawString(margin, y, title)
@@ -677,15 +680,15 @@ def download_daily_collection_pdf(
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4f46e5')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('FONTSIZE', (0, 0), (-1, 0), header_fs),
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('FONTSIZE', (0, 1), (-1, -1), body_fs),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f5ff')]),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ]))
         table.wrapOn(pdf, sum(col_widths), 400)
         th = table.wrapOn(pdf, sum(col_widths), 400)[1]
@@ -707,18 +710,44 @@ def download_daily_collection_pdf(
     if payments:
         pay_rows = []
         for i, p in enumerate(payments, 1):
-            student_name = f"{p.student.first_name} {p.student.last_name}" if p.student else "N/A"
+            s = p.student
+            student_name = f"{s.first_name} {s.last_name}" if s else "N/A"
+            adm_no = s.admission_number if s else "-"
+            roll_no = (s.roll_number or "-") if s else "-"
+            cls = s.class_ if s else None
+            class_sec = f"{cls.name} {cls.section}" if cls else "-"
+            # get father name from primary parent or first parent
+            father_name = "-"
+            if s and s.parents:
+                rel = next((r for r in s.parents if r.primary_contact), s.parents[0]) if s.parents else None
+                if rel and rel.parent:
+                    father_name = rel.parent.father_name or "-"
             pay_rows.append([
                 str(i),
                 p.receipt_number or "-",
+                adm_no,
                 student_name,
+                father_name,
+                class_sec,
+                roll_no,
                 p.payment_mode or "-",
                 f"\u20b9{float(p.amount_paid):,.2f}",
             ])
         usable = W - 2 * margin
-        pay_col_w = [usable * 0.06, usable * 0.20, usable * 0.38, usable * 0.18, usable * 0.18]
+        pay_col_w = [
+            usable * 0.04,   # #
+            usable * 0.11,   # Receipt No.
+            usable * 0.09,   # Adm. No.
+            usable * 0.18,   # Student Name
+            usable * 0.16,   # Father Name
+            usable * 0.11,   # Class/Sec
+            usable * 0.07,   # Roll No.
+            usable * 0.12,   # Mode
+            usable * 0.12,   # Amount
+        ]
         draw_table("Payment Details", pay_rows,
-                   ["#", "Receipt No.", "Student", "Mode", "Amount"], pay_col_w)
+                   ["#", "Receipt No.", "Adm. No.", "Student Name", "Father Name", "Class/Sec", "Roll No.", "Mode", "Amount"],
+                   pay_col_w, header_fs=8, body_fs=7.5)
 
     # Footer
     pdf.setFont("Helvetica-Oblique", 8)
