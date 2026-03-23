@@ -575,6 +575,164 @@ def get_daily_collection(
     )
 
 
+@router.get("/finance/daily-collection/download", dependencies=[Depends(is_admin)])
+def download_daily_collection_pdf(
+    collection_date: date = Query(..., description="Date for collection report"),
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Download daily collection report as PDF."""
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    from reportlab.platypus import Table, TableStyle
+    from app.models.school import School as SchoolModel
+
+    school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
+    school_name = school.name if school else "School"
+    school_address = getattr(school, 'address', '') or ''
+
+    payments = db.query(PaymentModel).options(
+        joinedload(PaymentModel.fund),
+        joinedload(PaymentModel.student)
+    ).filter(
+        PaymentModel.payment_date == collection_date,
+        PaymentModel.school_id == school_id
+    ).order_by(PaymentModel.created_at).all()
+
+    total_amount = sum(float(p.amount_paid) for p in payments)
+
+    # Group by fund
+    by_fund: dict = {}
+    for p in payments:
+        fname = p.fund.name if p.fund else 'Unknown'
+        if fname not in by_fund:
+            by_fund[fname] = {'amount': 0.0, 'count': 0}
+        by_fund[fname]['amount'] += float(p.amount_paid)
+        by_fund[fname]['count'] += 1
+
+    # Group by mode
+    by_mode: dict = {}
+    for p in payments:
+        mode = p.payment_mode or 'Unknown'
+        by_mode[mode] = by_mode.get(mode, 0.0) + float(p.amount_paid)
+
+    # Build PDF
+    buffer = BytesIO()
+    W, H = A4
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    margin = 0.65 * inch
+
+    # Header
+    y = H - margin
+    pdf.setFont("Helvetica-Bold", 18)
+    pdf.drawCentredString(W / 2, y, school_name)
+    if school_address:
+        pdf.setFont("Helvetica", 10)
+        y -= 0.22 * inch
+        pdf.drawCentredString(W / 2, y, school_address)
+    y -= 0.2 * inch
+    pdf.line(margin, y, W - margin, y)
+
+    y -= 0.3 * inch
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawCentredString(W / 2, y, "Daily Collection Report")
+
+    y -= 0.22 * inch
+    pdf.setFont("Helvetica", 11)
+    pdf.drawCentredString(W / 2, y, f"Date: {collection_date.strftime('%d %B %Y')}")
+
+    y -= 0.3 * inch
+    pdf.line(margin, y, W - margin, y)
+
+    # Summary boxes
+    y -= 0.45 * inch
+    box_w = (W - 2 * margin - 0.2 * inch) / 2
+    for i, (label, value) in enumerate([
+        ("Total Collection", f"\u20b9{total_amount:,.2f}"),
+        ("Total Payments", str(len(payments))),
+    ]):
+        bx = margin + i * (box_w + 0.2 * inch)
+        pdf.setFillColorRGB(0.94, 0.97, 1)
+        pdf.setStrokeColorRGB(0.31, 0.27, 0.9)
+        pdf.rect(bx, y - 0.55 * inch, box_w, 0.6 * inch, fill=1, stroke=1)
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(bx + 0.12 * inch, y - 0.22 * inch, label)
+        pdf.setFont("Helvetica-Bold", 14)
+        pdf.drawString(bx + 0.12 * inch, y - 0.47 * inch, value)
+
+    y -= 0.85 * inch
+
+    def draw_table(title, data, col_names, col_widths):
+        nonlocal y
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(margin, y, title)
+        y -= 0.22 * inch
+        table = Table([col_names] + data, colWidths=col_widths)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4f46e5')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f5ff')]),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        table.wrapOn(pdf, sum(col_widths), 400)
+        th = table.wrapOn(pdf, sum(col_widths), 400)[1]
+        table.drawOn(pdf, margin, y - th)
+        y -= th + 0.3 * inch
+
+    # By Fund table
+    fund_rows = [[name, f"\u20b9{d['amount']:,.2f}", str(d['count'])]
+                 for name, d in by_fund.items()]
+    fund_col_w = [W - 2 * margin - 2.8 * inch, 1.6 * inch, 1.2 * inch]
+    draw_table("Collection by Fund", fund_rows, ["Fund", "Amount", "Payments"], fund_col_w)
+
+    # By Mode table
+    mode_rows = [[mode, f"\u20b9{amt:,.2f}"] for mode, amt in by_mode.items()]
+    mode_col_w = [W - 2 * margin - 1.6 * inch, 1.6 * inch]
+    draw_table("Collection by Payment Mode", mode_rows, ["Payment Mode", "Amount"], mode_col_w)
+
+    # Individual payments table
+    if payments:
+        pay_rows = []
+        for i, p in enumerate(payments, 1):
+            student_name = f"{p.student.first_name} {p.student.last_name}" if p.student else "N/A"
+            pay_rows.append([
+                str(i),
+                p.receipt_number or "-",
+                student_name,
+                p.payment_mode or "-",
+                f"\u20b9{float(p.amount_paid):,.2f}",
+            ])
+        usable = W - 2 * margin
+        pay_col_w = [usable * 0.06, usable * 0.20, usable * 0.38, usable * 0.18, usable * 0.18]
+        draw_table("Payment Details", pay_rows,
+                   ["#", "Receipt No.", "Student", "Mode", "Amount"], pay_col_w)
+
+    # Footer
+    pdf.setFont("Helvetica-Oblique", 8)
+    pdf.setFillColorRGB(0.5, 0.5, 0.5)
+    pdf.drawCentredString(W / 2, margin * 0.6,
+                          f"Generated on {datetime.now().strftime('%d %B %Y %I:%M %p')}")
+
+    pdf.save()
+    buffer.seek(0)
+    filename = f"daily_collection_{collection_date.strftime('%Y%m%d')}.pdf"
+    return StreamingResponse(buffer, media_type="application/pdf",
+                             headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
 @router.get("/finance/installment-status", response_model=InstallmentStatusSummary, dependencies=[Depends(is_admin)])
 def get_installment_status(
     academic_year: str = Query(..., description="Academic year (e.g., 2024-25)"),

@@ -10,6 +10,7 @@ import {
   useGetDailyExpenditureQuery,
   useGetFundsQuery,
   useLazyGetStudentLedgerQuery,
+  useLazyDownloadDailyCollectionQuery,
 } from '../services/financeApi';
 import moment from 'moment';
 
@@ -609,10 +610,46 @@ const ClassWiseReport: React.FC = () => {
 
 const DailyCollectionReport: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(moment());
+  const [downloadPdf] = useLazyDownloadDailyCollectionQuery();
+  const [downloading, setDownloading] = useState(false);
 
   const { data, isLoading } = useGetDailyCollectionQuery({
     collection_date: selectedDate.format('YYYY-MM-DD'),
   });
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const blob = await downloadPdf(selectedDate.format('YYYY-MM-DD')).unwrap();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `daily_collection_${selectedDate.format('YYYY-MM-DD')}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent — backend error already logged
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handlePrint = async () => {
+    setDownloading(true);
+    try {
+      const blob = await downloadPdf(selectedDate.format('YYYY-MM-DD')).unwrap();
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, '_blank');
+      if (win) {
+        win.onload = () => { win.print(); };
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch {
+      // silent
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const fundColumns = [
     {
@@ -656,17 +693,29 @@ const DailyCollectionReport: React.FC = () => {
   return (
     <div>
       <Card style={{ marginBottom: 16 }}>
-        <Row gutter={16} align="middle">
+        <Row gutter={16} align="middle" justify="space-between">
           <Col>
-            <strong>Select Date:</strong>
+            <Space>
+              <strong>Select Date:</strong>
+              <DatePicker
+                value={selectedDate}
+                onChange={(date) => date && setSelectedDate(date)}
+                style={{ width: 200 }}
+              />
+            </Space>
           </Col>
-          <Col>
-            <DatePicker
-              value={selectedDate}
-              onChange={(date) => date && setSelectedDate(date)}
-              style={{ width: 200 }}
-            />
-          </Col>
+          {data && (
+            <Col>
+              <Space>
+                <Button icon={<DownloadOutlined />} loading={downloading} onClick={handleDownload}>
+                  Download PDF
+                </Button>
+                <Button icon={<PrinterOutlined />} loading={downloading} onClick={handlePrint}>
+                  Print
+                </Button>
+              </Space>
+            </Col>
+          )}
         </Row>
       </Card>
 

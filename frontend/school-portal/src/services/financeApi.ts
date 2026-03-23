@@ -258,6 +258,14 @@ export const financeApi = api.injectEndpoints({
       }),
     }),
 
+    downloadDailyCollection: builder.query<Blob, string>({
+      query: (collection_date) => ({
+        url: 'reports/finance/daily-collection/download',
+        params: { collection_date },
+        responseHandler: (response) => response.blob(),
+      }),
+    }),
+
     // Print Settings
     getPrintSettings: builder.query<any, void>({
       query: () => 'finance-extended/print-settings',
@@ -429,6 +437,8 @@ export const {
   useGetInstallmentStatusQuery,
   // All students outstanding
   useGetAllStudentOutstandingQuery,
+  // Daily collection download
+  useLazyDownloadDailyCollectionQuery,
   // Print settings
   useGetPrintSettingsQuery,
   useUpdatePrintSettingsMutation,
