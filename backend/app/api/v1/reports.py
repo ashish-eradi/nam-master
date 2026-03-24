@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.class_model import Class as ClassModel
 from app.models.teacher import Teacher as TeacherModel
 from app.models.parent import ParentStudentRelation, Parent as ParentModel
+from app.services.pdf_service import _FNT_N, _FNT_B, _FNT_I
 from app.schemas.report_schema import (
     CollectionSummary, CollectionSummaryItem,
     DefaultersReport, DefaulterStudent,
@@ -635,21 +636,21 @@ def download_daily_collection_pdf(
 
     # Header
     y = H - margin
-    pdf.setFont("Helvetica-Bold", 18)
+    pdf.setFont(_FNT_B, 18)
     pdf.drawCentredString(W / 2, y, school_name)
     if school_address:
-        pdf.setFont("Helvetica", 10)
+        pdf.setFont(_FNT_N, 10)
         y -= 0.22 * inch
         pdf.drawCentredString(W / 2, y, school_address)
     y -= 0.2 * inch
     pdf.line(margin, y, W - margin, y)
 
     y -= 0.3 * inch
-    pdf.setFont("Helvetica-Bold", 14)
+    pdf.setFont(_FNT_B, 14)
     pdf.drawCentredString(W / 2, y, "Daily Collection Report")
 
     y -= 0.22 * inch
-    pdf.setFont("Helvetica", 11)
+    pdf.setFont(_FNT_N, 11)
     pdf.drawCentredString(W / 2, y, f"Date: {collection_date.strftime('%d %B %Y')}")
 
     y -= 0.3 * inch
@@ -667,25 +668,25 @@ def download_daily_collection_pdf(
         pdf.setStrokeColorRGB(0.31, 0.27, 0.9)
         pdf.rect(bx, y - 0.55 * inch, box_w, 0.6 * inch, fill=1, stroke=1)
         pdf.setFillColorRGB(0, 0, 0)
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(_FNT_N, 9)
         pdf.drawString(bx + 0.12 * inch, y - 0.22 * inch, label)
-        pdf.setFont("Helvetica-Bold", 14)
+        pdf.setFont(_FNT_B, 14)
         pdf.drawString(bx + 0.12 * inch, y - 0.47 * inch, value)
 
     y -= 0.85 * inch
 
     def draw_table(title, data, col_names, col_widths, header_fs=10, body_fs=9):
         nonlocal y
-        pdf.setFont("Helvetica-Bold", 11)
+        pdf.setFont(_FNT_B, 11)
         pdf.drawString(margin, y, title)
         y -= 0.22 * inch
         table = Table([col_names] + data, colWidths=col_widths)
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4f46e5')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 0), (-1, 0), _FNT_B),
             ('FONTSIZE', (0, 0), (-1, 0), header_fs),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTNAME', (0, 1), (-1, -1), _FNT_N),
             ('FONTSIZE', (0, 1), (-1, -1), body_fs),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
@@ -754,7 +755,7 @@ def download_daily_collection_pdf(
                    pay_col_w, header_fs=8, body_fs=7.5)
 
     # Footer
-    pdf.setFont("Helvetica-Oblique", 8)
+    pdf.setFont(_FNT_I, 8)
     pdf.setFillColorRGB(0.5, 0.5, 0.5)
     pdf.drawCentredString(W / 2, margin * 0.6,
                           f"Generated on {datetime.now().strftime('%d %B %Y %I:%M %p')}")

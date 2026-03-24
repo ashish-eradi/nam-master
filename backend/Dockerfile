@@ -21,7 +21,7 @@ WORKDIR /
 
 
 # Install postgresql-client for wait-for-it.sh
-RUN apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y postgresql-client fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user
 RUN useradd --create-home appuser

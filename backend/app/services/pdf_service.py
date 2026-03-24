@@ -20,6 +20,34 @@ from sqlalchemy.orm import Session
 from app.models.finance import Payment as PaymentModel
 
 
+# Font constants — use DejaVu TTF (supports ₹ and full Unicode) if available,
+# otherwise fall back to built-in Helvetica (which lacks the ₹ glyph).
+_FNT_N  = _FNT_N
+_FNT_B  = _FNT_B
+_FNT_I  = 'Helvetica-Oblique'
+_FNT_BI = 'Helvetica-BoldOblique'
+try:
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfbase import pdfmetrics as _pm
+    _dv_dir = '/usr/share/fonts/truetype/dejavu/'
+    _dv_map = {
+        'DejaVuSans':            _dv_dir + 'DejaVuSans.ttf',
+        'DejaVuSans-Bold':       _dv_dir + 'DejaVuSans-Bold.ttf',
+        'DejaVuSans-Oblique':    _dv_dir + 'DejaVuSans-Oblique.ttf',
+        'DejaVuSans-BoldOblique':_dv_dir + 'DejaVuSans-BoldOblique.ttf',
+    }
+    _all_ok = all(os.path.exists(p) for p in _dv_map.values())
+    if _all_ok:
+        for _name, _path in _dv_map.items():
+            _pm.registerFont(TTFont(_name, _path))
+        _FNT_N  = 'DejaVuSans'
+        _FNT_B  = 'DejaVuSans-Bold'
+        _FNT_I  = 'DejaVuSans-Oblique'
+        _FNT_BI = 'DejaVuSans-BoldOblique'
+except Exception:
+    pass
+
+
 PAGE_SIZES = {
     'A4': A4,
     'A5': A5,
@@ -130,6 +158,14 @@ class PDFReceiptService:
 
         pdf.save()
         buffer.seek(0)
+
+        # Post-process: merge content on top of PDF template background
+        custom_tpl = ctx.get('custom_template_url')
+        if custom_tpl and custom_tpl.lower().endswith('.pdf'):
+            fs_path = '/app' + custom_tpl
+            if os.path.exists(fs_path):
+                buffer = PDFReceiptService._merge_pdf_template(buffer, fs_path)
+
         return buffer
 
     # ------------------------------------------------------------------ #
@@ -160,22 +196,35 @@ class PDFReceiptService:
             except Exception:
                 return H - margin
         elif ext == '.pdf':
-            try:
-                from pdfrw import PdfReader
-                from pdfrw.buildxobj import pagexobj
-                from pdfrw.toreportlab import makerl
-                template_pdf = PdfReader(fs_path)
-                if template_pdf.pages:
-                    xobj = pagexobj(template_pdf.pages[0])
-                    pdf.saveState()
-                    pdf.transform(W / float(xobj.BBox[2]), 0, 0, H / float(xobj.BBox[3]), 0, 0)
-                    pdf.doForm(makerl(pdf, xobj))
-                    pdf.restoreState()
-                return H - margin
-            except Exception:
-                return H - margin
+            # PDF template is merged in post-processing via _merge_pdf_template;
+            # nothing to draw on the canvas here — just return the start y.
+            return H - margin
 
         return H - margin
+
+    @staticmethod
+    def _merge_pdf_template(content_buffer: BytesIO, template_path: str) -> BytesIO:
+        """Overlay content PDF on top of a PDF template background using PyPDF2."""
+        try:
+            from PyPDF2 import PdfReader, PdfWriter
+            template_reader = PdfReader(template_path)
+            content_reader = PdfReader(content_buffer)
+            if not template_reader.pages or not content_reader.pages:
+                content_buffer.seek(0)
+                return content_buffer
+            template_page = template_reader.pages[0]
+            content_page = content_reader.pages[0]
+            # Merge: content drawn on top of the template background
+            template_page.merge_page(content_page)
+            writer = PdfWriter()
+            writer.add_page(template_page)
+            output = BytesIO()
+            writer.write(output)
+            output.seek(0)
+            return output
+        except Exception:
+            content_buffer.seek(0)
+            return content_buffer
 
     @staticmethod
     def _draw_receipt_header(pdf: canvas.Canvas, payment: PaymentModel,
@@ -197,10 +246,10 @@ class PDFReceiptService:
             pdf.setFillColorRGB(r, g, b)
             pdf.rect(0, y - band_height, W, band_height, fill=1, stroke=0)
             pdf.setFillColorRGB(1, 1, 1)
-            pdf.setFont("Helvetica-Bold", _fs(18, ctx))
+            pdf.setFont(_FNT_B, _fs(18, ctx))
             pdf.drawCentredString(W / 2, y - _sp(0.35 * inch, ctx), school_name)
             if school_address or contact_info:
-                pdf.setFont("Helvetica", _fs(9, ctx))
+                pdf.setFont(_FNT_N, _fs(9, ctx))
                 info_parts = [p for p in [school_address, contact_info] if p]
                 pdf.drawCentredString(W / 2, y - _sp(0.6 * inch, ctx), '  |  '.join(info_parts))
             pdf.setFillColorRGB(0, 0, 0)
@@ -208,13 +257,13 @@ class PDFReceiptService:
 
         elif template == 'minimal':
             # Simple bordered header
-            pdf.setFont("Helvetica-Bold", _fs(18, ctx))
+            pdf.setFont(_FNT_B, _fs(18, ctx))
             pdf.drawCentredString(W / 2, y - _sp(0.3 * inch, ctx), school_name)
             if school_address:
-                pdf.setFont("Helvetica", _fs(10, ctx))
+                pdf.setFont(_FNT_N, _fs(10, ctx))
                 pdf.drawCentredString(W / 2, y - _sp(0.55 * inch, ctx), school_address)
             if contact_info:
-                pdf.setFont("Helvetica", _fs(9, ctx))
+                pdf.setFont(_FNT_N, _fs(9, ctx))
                 pdf.drawCentredString(W / 2, y - _sp(0.73 * inch, ctx), contact_info)
             y_line = y - _sp(0.9 * inch, ctx)
             pdf.setLineWidth(1.5)
@@ -235,9 +284,9 @@ class PDFReceiptService:
                 except Exception:
                     pass
 
-            pdf.setFont("Helvetica-Bold", _fs(18, ctx))
+            pdf.setFont(_FNT_B, _fs(18, ctx))
             pdf.drawString(text_x, y - _sp(0.3 * inch, ctx), school_name)
-            pdf.setFont("Helvetica", _fs(10, ctx))
+            pdf.setFont(_FNT_N, _fs(10, ctx))
             if school_address:
                 pdf.drawString(text_x, y - _sp(0.5 * inch, ctx), school_address)
             if contact_info:
@@ -249,13 +298,13 @@ class PDFReceiptService:
     @staticmethod
     def _draw_receipt_number(pdf: canvas.Canvas, receipt_number: str, y: float, ctx: dict) -> float:
         W = ctx['width']
-        pdf.setFont("Helvetica-Bold", _fs(15, ctx))
+        pdf.setFont(_FNT_B, _fs(15, ctx))
         pdf.drawCentredString(W / 2, y, "FEE RECEIPT")
         y -= _sp(0.38 * inch, ctx)
 
-        pdf.setFont("Helvetica-Bold", _fs(13, ctx))
+        pdf.setFont(_FNT_B, _fs(13, ctx))
         receipt_text = f"Receipt No: {receipt_number}"
-        text_width = pdf.stringWidth(receipt_text, "Helvetica-Bold", _fs(13, ctx))
+        text_width = pdf.stringWidth(receipt_text, _FNT_B, _fs(13, ctx))
         border_x = (W - text_width) / 2 - _sp(0.2 * inch, ctx)
         border_y = y - _sp(0.22 * inch, ctx)
         border_w = text_width + _sp(0.4 * inch, ctx)
@@ -301,9 +350,9 @@ class PDFReceiptService:
             x = col1_x if i % 2 == 0 else col2_x
             if i % 2 == 1:
                 current_y -= _sp(0.23 * inch, ctx)
-            pdf.setFont("Helvetica-Bold", fs)
+            pdf.setFont(_FNT_B, fs)
             pdf.drawString(x, current_y, label)
-            pdf.setFont("Helvetica", fs)
+            pdf.setFont(_FNT_N, fs)
             pdf.drawString(x + label_width, current_y, str(value))
             if i % 2 == 1 or i == len(details) - 1:
                 current_y -= _sp(0.23 * inch, ctx)
@@ -337,16 +386,16 @@ class PDFReceiptService:
         style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), header_bg),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 0), (-1, 0), _FNT_B),
             ('FONTSIZE', (0, 0), (-1, 0), _fs(11, ctx)),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+            ('FONTNAME', (0, 1), (-1, -2), _FNT_N),
             ('FONTSIZE', (0, 1), (-1, -2), _fs(9, ctx)),
             ('ALIGN', (0, 1), (0, -1), 'CENTER'),
             ('ALIGN', (1, 1), (1, -1), 'LEFT'),
             ('ALIGN', (2, 1), (2, -1), 'RIGHT'),
             ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e5e7eb')),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (0, -1), (-1, -1), _FNT_B),
             ('FONTSIZE', (0, -1), (-1, -1), _fs(10, ctx)),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.black),
@@ -365,9 +414,9 @@ class PDFReceiptService:
         margin = ctx['margin']
         amount_words = PDFReceiptService._number_to_words(amount)
         fs = _fs(10, ctx)
-        pdf.setFont("Helvetica-Bold", fs)
+        pdf.setFont(_FNT_B, fs)
         pdf.drawString(margin, y, "Amount in Words:")
-        pdf.setFont("Helvetica-Oblique", fs)
+        pdf.setFont(_FNT_I, fs)
         pdf.drawString(margin + _sp(1.45 * inch, ctx), y, amount_words)
         return y - _sp(0.45 * inch, ctx)
 
@@ -390,16 +439,16 @@ class PDFReceiptService:
         pdf.setStrokeColorRGB(0, 0, 0)
 
         if total_outstanding > 0:
-            pdf.setFont("Helvetica-Bold", _fs(12, ctx))
+            pdf.setFont(_FNT_B, _fs(12, ctx))
             pdf.setFillColorRGB(0.6, 0.2, 0)
             pdf.drawCentredString(W / 2, y - _sp(0.25 * inch, ctx),
                                   f"Outstanding Balance: \u20b9{total_outstanding:,.2f}")
-            pdf.setFont("Helvetica", _fs(8, ctx))
+            pdf.setFont(_FNT_N, _fs(8, ctx))
             pdf.setFillColorRGB(0.4, 0.4, 0.4)
             pdf.drawCentredString(W / 2, y - _sp(0.48 * inch, ctx),
                                   "Please clear the remaining dues at the earliest.")
         else:
-            pdf.setFont("Helvetica-Bold", _fs(12, ctx))
+            pdf.setFont(_FNT_B, _fs(12, ctx))
             pdf.setFillColorRGB(0, 0.5, 0)
             pdf.drawCentredString(W / 2, y - _sp(0.35 * inch, ctx),
                                   "All Dues Cleared \u2013 No Outstanding Balance")
@@ -414,16 +463,16 @@ class PDFReceiptService:
         received_by_name = payment.received_by.full_name if payment.received_by else "Staff"
 
         if ctx['show_signature']:
-            pdf.setFont("Helvetica", _fs(10, ctx))
+            pdf.setFont(_FNT_N, _fs(10, ctx))
             pdf.drawString(margin, y, f"Received by: {received_by_name}")
             pdf.drawString(W - margin - _sp(2.5 * inch, ctx), y, "Signature: ___________________")
 
         y -= _sp(0.45 * inch, ctx)
-        pdf.setFont("Helvetica-Oblique", _fs(8, ctx))
+        pdf.setFont(_FNT_I, _fs(8, ctx))
         pdf.drawCentredString(W / 2, y,
                               "This is a computer-generated receipt and does not require a signature.")
         y -= _sp(0.18 * inch, ctx)
-        pdf.setFont("Helvetica", _fs(7, ctx))
+        pdf.setFont(_FNT_N, _fs(7, ctx))
         timestamp = datetime.now().strftime("%d %B %Y %I:%M %p")
         pdf.drawCentredString(W / 2, y, f"Generated on: {timestamp}")
 
@@ -447,7 +496,7 @@ class PDFReceiptService:
         else:
             y = PDFReceiptService._draw_due_slip_header(pdf, student_data, ctx)
 
-        pdf.setFont("Helvetica-Bold", _fs(17, ctx))
+        pdf.setFont(_FNT_B, _fs(17, ctx))
         r, g, b = ctx['primary_rgb']
         pdf.setFillColorRGB(r, g, b)
         pdf.drawCentredString(ctx['width'] / 2, y, "FEE DUE NOTICE")
@@ -465,6 +514,14 @@ class PDFReceiptService:
 
         pdf.save()
         buffer.seek(0)
+
+        # Post-process: merge content on top of PDF template background
+        custom_tpl = ctx.get('custom_template_url')
+        if custom_tpl and custom_tpl.lower().endswith('.pdf'):
+            fs_path = '/app' + custom_tpl
+            if os.path.exists(fs_path):
+                buffer = PDFReceiptService._merge_pdf_template(buffer, fs_path)
+
         return buffer
 
     @staticmethod
@@ -478,9 +535,9 @@ class PDFReceiptService:
         school_contact = student_data.get('school_contact', '')
 
         if template == 'simple':
-            pdf.setFont("Helvetica-Bold", _fs(17, ctx))
+            pdf.setFont(_FNT_B, _fs(17, ctx))
             pdf.drawString(margin, y, school_name)
-            pdf.setFont("Helvetica", _fs(9, ctx))
+            pdf.setFont(_FNT_N, _fs(9, ctx))
             if school_address:
                 pdf.drawString(margin, y - _sp(0.22 * inch, ctx), school_address)
             if school_contact:
@@ -488,9 +545,9 @@ class PDFReceiptService:
             y_line = y - _sp(0.55 * inch, ctx)
             pdf.line(margin, y_line, W - margin, y_line)
         else:  # formal (default)
-            pdf.setFont("Helvetica-Bold", _fs(20, ctx))
+            pdf.setFont(_FNT_B, _fs(20, ctx))
             pdf.drawCentredString(W / 2, y, school_name)
-            pdf.setFont("Helvetica", _fs(10, ctx))
+            pdf.setFont(_FNT_N, _fs(10, ctx))
             if school_address:
                 y -= _sp(0.23 * inch, ctx)
                 pdf.drawCentredString(W / 2, y, school_address)
@@ -501,7 +558,7 @@ class PDFReceiptService:
             pdf.line(margin, y_line, W - margin, y_line)
 
         y = y_line - _sp(0.28 * inch, ctx)
-        pdf.setFont("Helvetica", _fs(9, ctx))
+        pdf.setFont(_FNT_N, _fs(9, ctx))
         issue_date = datetime.now().strftime("%d %B %Y")
         pdf.drawString(margin, y, f"Issue Date: {issue_date}")
         pdf.drawRightString(W - margin, y, f"Academic Year: {student_data.get('academic_year', '')}")
@@ -511,7 +568,7 @@ class PDFReceiptService:
     def _draw_due_slip_student_details(pdf: canvas.Canvas, student_data: dict, y: float, ctx: dict) -> float:
         margin = ctx['margin']
         fs = _fs(10, ctx)
-        pdf.setFont("Helvetica-Bold", _fs(11, ctx))
+        pdf.setFont(_FNT_B, _fs(11, ctx))
         pdf.drawString(margin, y, "Student Details:")
         y -= _sp(0.28 * inch, ctx)
 
@@ -523,9 +580,9 @@ class PDFReceiptService:
         ]
         label_width = _sp(1.7 * inch, ctx)
         for label, value in details:
-            pdf.setFont("Helvetica-Bold", fs)
+            pdf.setFont(_FNT_B, fs)
             pdf.drawString(margin, y, label)
-            pdf.setFont("Helvetica", fs)
+            pdf.setFont(_FNT_N, fs)
             pdf.drawString(margin + label_width, y, str(value))
             y -= _sp(0.23 * inch, ctx)
 
@@ -534,7 +591,7 @@ class PDFReceiptService:
     @staticmethod
     def _draw_outstanding_table(pdf: canvas.Canvas, outstanding_data: dict, y: float, ctx: dict) -> float:
         W, margin = ctx['width'], ctx['margin']
-        pdf.setFont("Helvetica-Bold", _fs(11, ctx))
+        pdf.setFont(_FNT_B, _fs(11, ctx))
         pdf.drawString(margin, y, "Outstanding Fees:")
         y -= _sp(0.28 * inch, ctx)
 
@@ -562,16 +619,16 @@ class PDFReceiptService:
         style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), header_bg),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 0), (-1, 0), _FNT_B),
             ('FONTSIZE', (0, 0), (-1, 0), _fs(10, ctx)),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+            ('FONTNAME', (0, 1), (-1, -2), _FNT_N),
             ('FONTSIZE', (0, 1), (-1, -2), _fs(9, ctx)),
             ('ALIGN', (0, 1), (0, -1), 'CENTER'),
             ('ALIGN', (1, 1), (1, -1), 'LEFT'),
             ('ALIGN', (2, 1), (-1, -1), 'RIGHT'),
             ('BACKGROUND', (0, -1), (-1, -1), total_bg),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (0, -1), (-1, -1), _FNT_B),
             ('FONTSIZE', (0, -1), (-1, -1), _fs(10, ctx)),
             ('TEXTCOLOR', (0, -1), (-1, -1), colors.Color(r * 0.7, g * 0.7, b * 0.7)),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
@@ -590,13 +647,13 @@ class PDFReceiptService:
     def _draw_overdue_installments(pdf: canvas.Canvas, installments: list, y: float, ctx: dict) -> float:
         margin = ctx['margin']
         r, g, b = ctx['primary_rgb']
-        pdf.setFont("Helvetica-Bold", _fs(11, ctx))
+        pdf.setFont(_FNT_B, _fs(11, ctx))
         pdf.setFillColorRGB(r, g, b)
         pdf.drawString(margin, y, "\u26a0 Overdue Installments:")
         pdf.setFillColorRGB(0, 0, 0)
         y -= _sp(0.28 * inch, ctx)
 
-        pdf.setFont("Helvetica", _fs(9, ctx))
+        pdf.setFont(_FNT_N, _fs(9, ctx))
         for inst in installments[:5]:
             fee_name = inst.get('fee_name', '')
             due_date = inst.get('due_date', '')
@@ -620,18 +677,18 @@ class PDFReceiptService:
         pdf.rect(margin, y - box_h, W - 2 * margin, box_h, fill=1, stroke=1)
         pdf.setFillColorRGB(0, 0, 0)
 
-        pdf.setFont("Helvetica-Bold", _fs(13, ctx))
+        pdf.setFont(_FNT_B, _fs(13, ctx))
         pdf.drawCentredString(W / 2, y - _sp(0.28 * inch, ctx),
                               f"Please Pay: \u20b9{total_outstanding:,.2f}")
-        pdf.setFont("Helvetica", _fs(9, ctx))
+        pdf.setFont(_FNT_N, _fs(9, ctx))
         pdf.drawCentredString(W / 2, y - _sp(0.52 * inch, ctx),
                               "Payment is requested at the earliest to avoid any inconvenience.")
 
         y -= box_h + _sp(0.2 * inch, ctx)
-        pdf.setFont("Helvetica-Bold", _fs(10, ctx))
+        pdf.setFont(_FNT_B, _fs(10, ctx))
         pdf.drawString(margin, y, "Payment Methods:")
         y -= _sp(0.22 * inch, ctx)
-        pdf.setFont("Helvetica", _fs(9, ctx))
+        pdf.setFont(_FNT_N, _fs(9, ctx))
         for method in ["\u2022 Cash payment at school office",
                        "\u2022 Bank transfer / Cheque",
                        "\u2022 Online payment (UPI / Cards)"]:
@@ -643,15 +700,15 @@ class PDFReceiptService:
         W, margin = ctx['width'], ctx['margin']
         y = _sp(1.1 * inch, ctx)
         r, g, b = ctx['primary_rgb']
-        pdf.setFont("Helvetica-BoldOblique", _fs(9, ctx))
+        pdf.setFont(_FNT_BI, _fs(9, ctx))
         pdf.setFillColorRGB(r, g, b)
         pdf.drawString(margin, y, "Note: This is a system-generated fee due notice.")
         pdf.setFillColorRGB(0, 0, 0)
         y -= _sp(0.22 * inch, ctx)
-        pdf.setFont("Helvetica", _fs(8, ctx))
+        pdf.setFont(_FNT_N, _fs(8, ctx))
         pdf.drawString(margin, y, "For any queries regarding fees, please contact the school office.")
         y -= _sp(0.25 * inch, ctx)
-        pdf.setFont("Helvetica", _fs(7, ctx))
+        pdf.setFont(_FNT_N, _fs(7, ctx))
         timestamp = datetime.now().strftime("%d %B %Y %I:%M %p")
         pdf.drawCentredString(W / 2, y, f"Generated on: {timestamp}")
 
