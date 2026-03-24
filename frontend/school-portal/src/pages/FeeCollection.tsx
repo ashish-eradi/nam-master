@@ -28,6 +28,8 @@ const FeeCollection: React.FC = () => {
   const [isClassSearch, setIsClassSearch] = useState(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>();
   const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [filterClassName, setFilterClassName] = useState<string>('');
+  const [filterSection, setFilterSection] = useState<string>('');
   const [isPaymentModalVisible, setIsPaymentModalVisible] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editingPayment, setEditingPayment] = useState<any>(null);
@@ -74,6 +76,33 @@ const FeeCollection: React.FC = () => {
     setSelectedStudent(null);
     setIsClassSearch(true);
     setAutoCompleteOptions([]);
+  };
+
+  // Derived options for two-step class+section picker
+  const classNameOptions = Array.from(
+    new Set((classes || []).map((c: any) => c.name).filter(Boolean))
+  ).sort((a: any, b: any) => {
+    const na = parseInt(a), nb = parseInt(b);
+    return isNaN(na) || isNaN(nb) ? String(a).localeCompare(String(b)) : na - nb;
+  }) as string[];
+
+  const sectionOptions = (classes || [])
+    .filter((c: any) => c.name === filterClassName && c.section)
+    .map((c: any) => c.section as string)
+    .sort();
+
+  const handleClassNameChange = (name: string) => {
+    setFilterClassName(name);
+    setFilterSection('');
+    setSelectedClassId('');
+    setSearchOptions([]);
+    setSelectedStudent(null);
+  };
+
+  const handleSectionChange = (section: string) => {
+    setFilterSection(section);
+    const matched = (classes || []).find((c: any) => c.name === filterClassName && c.section === section);
+    if (matched) handleClassSelect(matched.id);
   };
 
   const handleSearch = async () => {
@@ -495,26 +524,49 @@ const FeeCollection: React.FC = () => {
       {/* Student Search */}
       <Card title="Search Student" style={{ marginBottom: 16 }}>
         <Row gutter={16} align="top" style={{ marginBottom: 16 }}>
-          <Col xs={24} md={10}>
-            <div style={{ marginBottom: 8, fontWeight: 'bold' }}>Select Class:</div>
+          <Col xs={24} md={5}>
+            <div style={{ marginBottom: 8, fontWeight: 'bold' }}>Class:</div>
             <Select
               size="large"
               style={{ width: '100%' }}
-              placeholder="Select a class to view all students"
-              value={selectedClassId || undefined}
-              onChange={handleClassSelect}
-              loading={isLoadingClassStudents}
+              placeholder="Select class"
+              value={filterClassName || undefined}
+              onChange={handleClassNameChange}
               disabled={isSearching || isLoadingClassStudents}
               allowClear
               onClear={() => {
+                setFilterClassName('');
+                setFilterSection('');
                 setSelectedClassId('');
                 setSearchOptions([]);
               }}
             >
-              {classes?.map((cls: any) => (
-                <Option key={cls.id} value={cls.id}>
-                  <TeamOutlined /> {cls.name}
+              {classNameOptions.map((name: string) => (
+                <Option key={name} value={name}>
+                  <TeamOutlined /> {name}
                 </Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={24} md={5}>
+            <div style={{ marginBottom: 8, fontWeight: 'bold' }}>Section:</div>
+            <Select
+              size="large"
+              style={{ width: '100%' }}
+              placeholder="Select section"
+              value={filterSection || undefined}
+              onChange={handleSectionChange}
+              disabled={!filterClassName || isSearching || isLoadingClassStudents}
+              loading={isLoadingClassStudents}
+              allowClear
+              onClear={() => {
+                setFilterSection('');
+                setSelectedClassId('');
+                setSearchOptions([]);
+              }}
+            >
+              {sectionOptions.map((sec: string) => (
+                <Option key={sec} value={sec}>Section {sec}</Option>
               ))}
             </Select>
           </Col>
