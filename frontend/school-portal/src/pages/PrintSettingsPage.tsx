@@ -132,39 +132,46 @@ const TemplateFieldMapper: React.FC<{
   onShowLabelsChange: (v: boolean) => void;
 }> = ({ docType, templateUrl, positions, onChange, showLabels, onShowLabelsChange }) => {
   const fields = docType === 'receipt' ? RECEIPT_FIELDS : FEE_DUE_FIELDS;
-  const [activeField, setActiveField] = useState<string | null>(null);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState(false);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
-  // Fetch template from backend (reads from DB base64, works after container restart)
+  // Fetch template from backend (reads DB base64, works after container restart)
   useEffect(() => {
     let objectUrl: string | null = null;
     setPreviewError(false);
+    setPreviewSrc(null);
     fetch(`${getApiBaseUrl()}/finance-extended/print-settings/template-preview/${docType}`, {
       credentials: 'include',
     })
-      .then((res) => {
-        if (!res.ok) throw new Error('not found');
-        return res.blob();
-      })
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        setPreviewSrc(objectUrl);
-      })
+      .then((res) => { if (!res.ok) throw new Error(); return res.blob(); })
+      .then((blob) => { objectUrl = URL.createObjectURL(blob); setPreviewSrc(objectUrl); })
       .catch(() => setPreviewError(true));
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [docType, templateUrl]);
 
-  const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!activeField || !imgRef.current) return;
-    const rect = imgRef.current.getBoundingClientRect();
-    const x = parseFloat((((e.clientX - rect.left) / rect.width) * 100).toFixed(2));
-    const y = parseFloat((((e.clientY - rect.top) / rect.height) * 100).toFixed(2));
-    onChange({ ...positions, [activeField]: { x, y } });
-    setActiveField(null);
+  const getPosFromEvent = (e: React.DragEvent<HTMLDivElement>): { x: number; y: number } | null => {
+    const zone = dropZoneRef.current;
+    if (!zone) return null;
+    const rect = zone.getBoundingClientRect();
+    return {
+      x: parseFloat((((e.clientX - rect.left) / rect.width) * 100).toFixed(2)),
+      y: parseFloat((((e.clientY - rect.top) / rect.height) * 100).toFixed(2)),
+    };
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const key = draggingKey || e.dataTransfer.getData('fieldKey');
+    if (!key) return;
+    const pos = getPosFromEvent(e);
+    if (!pos) return;
+    // Clamp inside bounds
+    pos.x = Math.min(98, Math.max(2, pos.x));
+    pos.y = Math.min(98, Math.max(2, pos.y));
+    onChange({ ...positions, [key]: pos });
+    setDraggingKey(null);
   };
 
   const removeField = (key: string) => {
@@ -180,20 +187,22 @@ const TemplateFieldMapper: React.FC<{
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>Field Placement</span>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          Click a field name → then click where it belongs on your template
+          Drag a field from the list onto your template to position it
         </Text>
       </div>
 
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-        {/* Template preview with placed badges */}
+
+        {/* ── Template drop zone ── */}
         <div
-          onClick={handleImageClick}
+          ref={dropZoneRef}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop}
           style={{
             position: 'relative',
             flex: 1,
             minHeight: 200,
-            cursor: activeField ? 'crosshair' : 'default',
-            border: activeField ? '2px dashed #4f46e5' : '1px solid #d9d9d9',
+            border: draggingKey ? '2px dashed #4f46e5' : '1px solid #d9d9d9',
             borderRadius: 6,
             overflow: 'hidden',
             background: '#f0f0f0',
@@ -202,42 +211,50 @@ const TemplateFieldMapper: React.FC<{
         >
           {previewSrc ? (
             <img
-              ref={imgRef}
               src={previewSrc}
               alt="template"
               draggable={false}
               style={{ width: '100%', display: 'block', pointerEvents: 'none' }}
             />
           ) : previewError ? (
-            <div style={{ padding: 32, textAlign: 'center', color: '#888', fontSize: 13 }}>
-              Preview unavailable — please re-upload the template to see it here
+            <div style={{ padding: 40, textAlign: 'center', color: '#888', fontSize: 13 }}>
+              Preview unavailable — please re-upload the template
             </div>
           ) : (
-            <div style={{ padding: 32, textAlign: 'center', color: '#888', fontSize: 13 }}>
+            <div style={{ padding: 40, textAlign: 'center', color: '#888', fontSize: 13 }}>
               Loading preview…
             </div>
           )}
 
-          {/* Active placement hint */}
-          {activeField && (
+          {draggingKey && (
             <div style={{
-              position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
-              background: 'rgba(79,70,229,0.92)', color: '#fff', fontSize: 11,
-              padding: '4px 14px', borderRadius: 20, pointerEvents: 'none', whiteSpace: 'nowrap',
+              position: 'absolute', inset: 0, background: 'rgba(79,70,229,0.06)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              pointerEvents: 'none',
             }}>
-              Click to place: <strong>{fields.find(f => f.key === activeField)?.label}</strong>
+              <div style={{
+                background: 'rgba(79,70,229,0.88)', color: '#fff', fontSize: 13,
+                padding: '6px 18px', borderRadius: 20,
+              }}>
+                Drop to place: <strong>{fields.find(f => f.key === draggingKey)?.label}</strong>
+              </div>
             </div>
           )}
 
-          {/* Placed field badges */}
+          {/* Placed badges — also draggable for repositioning */}
           {Object.entries(positions).map(([key, pos]) => {
             const field = fields.find(f => f.key === key);
             if (!field) return null;
-            const colorIdx = fields.findIndex(f => f.key === key);
-            const color = FIELD_COLORS[colorIdx % FIELD_COLORS.length];
+            const color = FIELD_COLORS[fields.findIndex(f => f.key === key) % FIELD_COLORS.length];
             return (
               <div
                 key={key}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('fieldKey', key);
+                  setDraggingKey(key);
+                }}
+                onDragEnd={() => setDraggingKey(null)}
                 style={{
                   position: 'absolute',
                   left: `${pos.x}%`,
@@ -249,57 +266,63 @@ const TemplateFieldMapper: React.FC<{
                   padding: '2px 8px',
                   borderRadius: 12,
                   whiteSpace: 'nowrap',
-                  cursor: 'pointer',
+                  cursor: 'grab',
                   zIndex: 10,
                   boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
                   lineHeight: '18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
                 }}
-                onClick={(e) => { e.stopPropagation(); removeField(key); }}
-                title="Click to remove"
               >
-                {field.label} ✕
+                <span>{field.label}</span>
+                <span
+                  style={{ cursor: 'pointer', opacity: 0.8, fontWeight: 700 }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); removeField(key); }}
+                  title="Remove"
+                >✕</span>
               </div>
             );
           })}
         </div>
 
-        {/* Field list panel */}
-        <div style={{ width: 178, flexShrink: 0 }}>
+        {/* ── Field list panel ── */}
+        <div style={{ width: 180, flexShrink: 0 }}>
           <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>
-            {placedCount}/{fields.length} fields placed
+            {placedCount}/{fields.length} placed — drag onto template
           </div>
 
           {fields.map((f, idx) => {
             const placed = !!positions[f.key];
-            const isActive = activeField === f.key;
             const color = FIELD_COLORS[idx % FIELD_COLORS.length];
             return (
               <div
                 key={f.key}
-                onClick={() => setActiveField(isActive ? null : f.key)}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('fieldKey', f.key);
+                  setDraggingKey(f.key);
+                }}
+                onDragEnd={() => setDraggingKey(null)}
                 style={{
-                  padding: '5px 8px',
+                  padding: '6px 8px',
                   marginBottom: 5,
                   borderRadius: 6,
                   fontSize: 12,
-                  cursor: 'pointer',
-                  background: isActive ? color : '#fff',
-                  color: isActive ? '#fff' : '#333',
-                  border: `1.5px solid ${isActive ? color : placed ? color : '#e0e0e0'}`,
+                  cursor: 'grab',
+                  background: placed ? '#f0fff4' : '#fafafa',
+                  border: `1.5px solid ${placed ? color : '#e0e0e0'}`,
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  transition: 'background 0.12s, border 0.12s',
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                    background: isActive ? '#fff' : placed ? color : '#ccc',
-                  }} />
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
                   {f.label}
                 </span>
-                {placed && !isActive && <span style={{ color, fontSize: 11, fontWeight: 700 }}>✓</span>}
+                {placed && <span style={{ color, fontSize: 11, fontWeight: 700 }}>✓</span>}
               </div>
             );
           })}
@@ -312,22 +335,20 @@ const TemplateFieldMapper: React.FC<{
               <span style={{ fontSize: 12 }}>Show field labels</span>
             </div>
             <div style={{ fontSize: 11, color: '#888' }}>
-              Turn off if template has labels already printed
+              Turn off if your template already has labels printed
             </div>
           </div>
 
           {placedCount > 0 && (
-            <Popconfirm title="Remove all field placements?" onConfirm={() => onChange({})}>
-              <Button size="small" danger style={{ width: '100%' }}>
-                Clear all
-              </Button>
+            <Popconfirm title="Remove all placements?" onConfirm={() => onChange({})}>
+              <Button size="small" danger style={{ width: '100%' }}>Clear all</Button>
             </Popconfirm>
           )}
         </div>
       </div>
 
       <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
-        Only placed fields appear in the PDF. Click a badge on the image to remove it. Save settings after placing all fields.
+        Drag badges on the template to reposition them. Click ✕ on a badge to remove it.
       </div>
     </div>
   );
@@ -556,7 +577,7 @@ const PrintSettingsPage: React.FC = () => {
   if (isLoading) return <Spin style={{ display: 'block', marginTop: 60 }} size="large" />;
 
   return (
-    <div style={{ maxWidth: 900 }}>
+    <div style={{ maxWidth: 900, paddingBottom: 80 }}>
       <div style={{ marginBottom: 24 }}>
         <Title level={4} style={{ margin: 0 }}>Print Settings</Title>
         <Text type="secondary">Customise the page size, colour scheme, template design and field placement for receipts and fee due notices.</Text>
@@ -581,9 +602,28 @@ const PrintSettingsPage: React.FC = () => {
         templates={FEE_DUE_TEMPLATES}
       />
 
-      <Button type="primary" size="large" loading={saving} onClick={handleSave} style={{ minWidth: 160 }}>
-        Save Settings
-      </Button>
+      {/* Sticky save bar — always visible */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: '#fff',
+        borderTop: '1px solid #e0e0e0',
+        padding: '12px 32px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 16,
+        zIndex: 100,
+        boxShadow: '0 -2px 8px rgba(0,0,0,0.06)',
+      }}>
+        <Button type="primary" size="large" loading={saving} onClick={handleSave} style={{ minWidth: 160 }}>
+          Save Settings
+        </Button>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Remember to save after placing fields on your template.
+        </Text>
+      </div>
     </div>
   );
 };
