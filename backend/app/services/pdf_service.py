@@ -182,10 +182,12 @@ def _build_ctx(print_settings: dict, doc_type: str) -> dict:
             doc_settings.get('custom_template_data') or doc_settings.get('custom_template_url')
         ),
         # Custom template overlay controls (set via Print Settings UI)
-        # custom_content_top: % from top where data block starts (default 30)
+        # custom_field_positions: {field_key: {x: %, y: %}} — visual field mapper output
+        'custom_field_positions': doc_settings.get('custom_field_positions', {}),
+        # custom_content_top: fallback % from top when no field positions set (default 30)
         'custom_content_top': doc_settings.get('custom_content_top', 30),
-        # custom_show_labels: whether to draw "Student Name:" etc. (default True)
-        'custom_show_labels': doc_settings.get('custom_show_labels', True),
+        # custom_show_labels: draw "Student Name:" label alongside value (default False for templates)
+        'custom_show_labels': doc_settings.get('custom_show_labels', False),
     }
 
 
@@ -294,18 +296,79 @@ class PDFReceiptService:
         return H - margin
 
     @staticmethod
+    def _draw_at_pos(pdf: canvas.Canvas, ctx: dict, positions: dict, key: str, value: str,
+                     label: str = '', show_label: bool = False, bold: bool = False):
+        """Draw a single field value at its stored (x%, y%) position. No-op if key not in positions."""
+        pos = positions.get(key)
+        if pos is None:
+            return
+        W, H = ctx['width'], ctx['height']
+        x = W * pos['x'] / 100
+        y = H * (1.0 - pos['y'] / 100)
+        fs = _fs(10, ctx)
+        if show_label and label:
+            pdf.setFont(_FNT_B, fs)
+            pdf.drawString(x, y, label)
+            pdf.setFont(_FNT_N, fs)
+            label_w = pdf.stringWidth(label, _FNT_B, fs) + _sp(0.12 * inch, ctx)
+            pdf.drawString(x + label_w, y, value)
+        else:
+            pdf.setFont(_FNT_B if bold else _FNT_N, fs)
+            pdf.drawString(x, y, value)
+
+    @staticmethod
     def _draw_simple_receipt_data(pdf: canvas.Canvas, payment: PaymentModel,
                                    ctx: dict, father_name: Optional[str] = None,
                                    total_outstanding: float = 0.0):
         """Draw only raw data values for custom template mode.
-        No boxes, no fills, no structural headers — template provides all visual structure."""
+        If custom_field_positions is set: draw each value at its exact placed position.
+        Otherwise fall back to the column-layout starting at custom_content_top%."""
         W, margin = ctx['width'], ctx['margin']
         H = ctx['height']
 
+        student_name = f"{payment.student.first_name} {payment.student.last_name}"
+        admission_no = payment.student.admission_number
+        class_name   = getattr(payment.student.class_, 'name', 'N/A') if payment.student.class_ else 'N/A'
+        show_labels  = ctx.get('custom_show_labels', False)
+
+        # ── Branch 1: visual field positions set by user ─────────────────────
+        field_positions = ctx.get('custom_field_positions') or {}
+        if field_positions:
+            _d = PDFReceiptService._draw_at_pos
+            sl = show_labels
+            _d(pdf, ctx, field_positions, 'receipt_no',  payment.receipt_number, 'Receipt No:', sl, bold=True)
+            _d(pdf, ctx, field_positions, 'date',        payment.payment_date.strftime("%d %B %Y"), 'Date:', sl)
+            _d(pdf, ctx, field_positions, 'student_name', student_name, 'Student Name:', sl)
+            _d(pdf, ctx, field_positions, 'father_name',  father_name or 'N/A', "Father's Name:", sl)
+            _d(pdf, ctx, field_positions, 'admission_no', admission_no, 'Admission No:', sl)
+            _d(pdf, ctx, field_positions, 'class',        class_name, 'Class:', sl)
+            _d(pdf, ctx, field_positions, 'payment_mode', payment.payment_mode.upper(), 'Mode:', sl)
+            _d(pdf, ctx, field_positions, 'total',        f"{_RUPEE}{payment.amount_paid:,.2f}", 'Total:', sl, bold=True)
+            if total_outstanding > 0:
+                _d(pdf, ctx, field_positions, 'outstanding', f"{_RUPEE}{total_outstanding:,.2f}", 'Outstanding:', sl, bold=True)
+            else:
+                _d(pdf, ctx, field_positions, 'outstanding', 'Nil', 'Outstanding:', sl)
+
+            # Fee table: draw a list starting at the placed position
+            fee_pos = field_positions.get('fee_table')
+            if fee_pos:
+                fx = W * fee_pos['x'] / 100
+                fy = H * (1.0 - fee_pos['y'] / 100)
+                line_h = _sp(0.22 * inch, ctx)
+                table_w = min(W - fx - margin, W * 0.55)
+                for detail in payment.payment_details:
+                    fee_name = detail.fee.fee_name if detail.fee else 'Fee'
+                    amount = Decimal(str(detail.amount))
+                    pdf.setFont(_FNT_N, _fs(9, ctx))
+                    pdf.drawString(fx, fy, fee_name)
+                    pdf.drawRightString(fx + table_w, fy, f"{_RUPEE}{amount:,.2f}")
+                    fy -= line_h
+            return  # field positions handled — done
+
+        # ── Branch 2: no positions — column layout starting at custom_content_top% ─
         # Content start: configurable % from top (default 30%)
         content_top_pct = ctx.get('custom_content_top', 30)
         y = H * (1.0 - content_top_pct / 100.0)
-        show_labels = ctx.get('custom_show_labels', True)
 
         fs_label = _fs(10, ctx)
         fs_value = _fs(10, ctx)
@@ -326,9 +389,6 @@ class PDFReceiptService:
         y -= line_gap * 1.2
 
         # Student details as two-column key–value pairs
-        student_name = f"{payment.student.first_name} {payment.student.last_name}"
-        admission_no = payment.student.admission_number
-        class_name   = getattr(payment.student.class_, 'name', 'N/A') if payment.student.class_ else 'N/A'
         rows = [
             ("Student Name:", student_name),
             ("Admission No:", admission_no),
@@ -735,11 +795,42 @@ class PDFReceiptService:
         """Draw only raw fee-due data for custom template mode — no boxes, no fills."""
         W, margin = ctx['width'], ctx['margin']
         H = ctx['height']
+        show_labels = ctx.get('custom_show_labels', False)
 
-        # Content start: configurable % from top (default 30%)
+        # ── Branch 1: visual field positions set by user ─────────────────────
+        field_positions = ctx.get('custom_field_positions') or {}
+        if field_positions:
+            _d = PDFReceiptService._draw_at_pos
+            sl = show_labels
+            issue_date = datetime.now().strftime("%d %B %Y")
+            _d(pdf, ctx, field_positions, 'issue_date',        issue_date, 'Issue Date:', sl)
+            _d(pdf, ctx, field_positions, 'academic_year',     str(student_data.get('academic_year', '')), 'Academic Year:', sl)
+            _d(pdf, ctx, field_positions, 'student_name',      student_data.get('student_name', ''), 'Student Name:', sl)
+            _d(pdf, ctx, field_positions, 'admission_no',      student_data.get('admission_number', ''), 'Admission No:', sl)
+            _d(pdf, ctx, field_positions, 'class_name',        student_data.get('class_name', ''), 'Class:', sl)
+            _d(pdf, ctx, field_positions, 'father_name',       student_data.get('father_name', ''), "Father's Name:", sl)
+            total_outstanding = outstanding_data.get('total_outstanding', 0)
+            _d(pdf, ctx, field_positions, 'total_outstanding', f"{_RUPEE}{total_outstanding:,.2f}", 'Total Outstanding:', sl, bold=True)
+
+            # Outstanding fees list
+            ot_pos = field_positions.get('outstanding_table')
+            if ot_pos:
+                fx = W * ot_pos['x'] / 100
+                fy = H * (1.0 - ot_pos['y'] / 100)
+                line_h = _sp(0.22 * inch, ctx)
+                table_w = min(W - fx - margin, W * 0.55)
+                for fee in outstanding_data.get('by_fee', []):
+                    fee_name    = fee.get('fee_name', '')
+                    outstanding = fee.get('outstanding', 0)
+                    pdf.setFont(_FNT_N, _fs(9, ctx))
+                    pdf.drawString(fx, fy, fee_name)
+                    pdf.drawRightString(fx + table_w, fy, f"{_RUPEE}{outstanding:,.2f}")
+                    fy -= line_h
+            return  # field positions handled — done
+
+        # ── Branch 2: no positions — column layout starting at custom_content_top% ─
         content_top_pct = ctx.get('custom_content_top', 30)
         y = H * (1.0 - content_top_pct / 100.0)
-        show_labels = ctx.get('custom_show_labels', True)
 
         line_gap = _sp(0.26 * inch, ctx)
         label_w  = _sp(1.5 * inch, ctx)
