@@ -13,7 +13,7 @@ from app.models.user import User
 from app.models.class_model import Class as ClassModel
 from app.models.teacher import Teacher as TeacherModel
 from app.models.parent import ParentStudentRelation, Parent as ParentModel
-from app.services.pdf_service import _FNT_N, _FNT_B, _FNT_I
+from app.services.pdf_service import _FNT_N, _FNT_B, _FNT_I, _RUPEE, _try_load_dejavu
 from app.schemas.report_schema import (
     CollectionSummary, CollectionSummaryItem,
     DefaultersReport, DefaulterStudent,
@@ -588,6 +588,7 @@ def download_daily_collection_pdf(
     school_id: str = Depends(get_current_user_school)
 ):
     """Download daily collection report as PDF."""
+    _try_load_dejavu()  # ensure DejaVu fonts are loaded for ₹ symbol
     from fastapi.responses import StreamingResponse
     from io import BytesIO
     from reportlab.lib.pagesizes import A4
@@ -660,7 +661,7 @@ def download_daily_collection_pdf(
     y -= 0.45 * inch
     box_w = (W - 2 * margin - 0.2 * inch) / 2
     for i, (label, value) in enumerate([
-        ("Total Collection", f"\u20b9{total_amount:,.2f}"),
+        ("Total Collection", f"{_RUPEE}{total_amount:,.2f}"),
         ("Total Payments", str(len(payments))),
     ]):
         bx = margin + i * (box_w + 0.2 * inch)
@@ -701,13 +702,13 @@ def download_daily_collection_pdf(
         y -= th + 0.3 * inch
 
     # By Fund table
-    fund_rows = [[name, f"\u20b9{d['amount']:,.2f}", str(d['count'])]
+    fund_rows = [[name, f"{_RUPEE}{d['amount']:,.2f}", str(d['count'])]
                  for name, d in by_fund.items()]
     fund_col_w = [W - 2 * margin - 2.8 * inch, 1.6 * inch, 1.2 * inch]
     draw_table("Collection by Fund", fund_rows, ["Fund", "Amount", "Payments"], fund_col_w)
 
     # By Mode table
-    mode_rows = [[mode, f"\u20b9{amt:,.2f}"] for mode, amt in by_mode.items()]
+    mode_rows = [[mode, f"{_RUPEE}{amt:,.2f}"] for mode, amt in by_mode.items()]
     mode_col_w = [W - 2 * margin - 1.6 * inch, 1.6 * inch]
     draw_table("Collection by Payment Mode", mode_rows, ["Payment Mode", "Amount"], mode_col_w)
 
@@ -736,7 +737,7 @@ def download_daily_collection_pdf(
                 class_sec,
                 roll_no,
                 p.payment_mode or "-",
-                f"\u20b9{float(p.amount_paid):,.2f}",
+                f"{_RUPEE}{float(p.amount_paid):,.2f}",
             ])
         usable = W - 2 * margin
         pay_col_w = [

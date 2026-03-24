@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Card, Row, Col, Select, Switch, Button, Divider, message, Spin, Space, Tag,
-  Upload, Popconfirm, Alert, Typography,
+  Upload, Popconfirm, Alert, Typography, Slider,
 } from 'antd';
 import {
   UploadOutlined, DeleteOutlined, CheckCircleOutlined, FileImageOutlined, FilePdfOutlined,
@@ -228,7 +228,7 @@ const DocSection: React.FC<{
           <Alert
             type="info"
             showIcon
-            message="Upload your school's letterhead or a pre-designed header image. It will replace the programmatic header. Leave blank to use the template style below."
+            message="Upload your full-page receipt design (PNG, JPG, or PDF). Data will be overlaid on top — adjust the position settings below to match your design."
             style={{ fontSize: 12, marginBottom: 10 }}
           />
           <TemplateUploadSection
@@ -236,6 +236,40 @@ const DocSection: React.FC<{
             label={title}
             currentUrl={settings.custom_template_url}
           />
+
+          <div style={{ marginTop: 16, padding: '14px 16px', background: '#f6f0ff', borderRadius: 8, border: '1px solid #d3adf7' }}>
+            <div style={{ fontWeight: 500, marginBottom: 12, color: '#531dab' }}>Template Data Placement</div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 4 }}>
+                Content starts at — <strong>{settings.custom_content_top ?? 30}%</strong> from top of page
+              </label>
+              <Slider
+                min={10}
+                max={75}
+                step={1}
+                value={settings.custom_content_top ?? 30}
+                onChange={(v) => onChange({ custom_content_top: v })}
+                marks={{ 10: '10%', 30: '30%', 50: '50%', 75: '75%' }}
+                tooltip={{ formatter: (v) => `${v}% from top` }}
+              />
+              <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                Drag to push data down. Increase if data overlaps your template's header area.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Switch
+                size="small"
+                checked={settings.custom_show_labels ?? true}
+                onChange={(v) => onChange({ custom_show_labels: v })}
+              />
+              <span style={{ fontSize: 13 }}>Show field labels</span>
+              <span style={{ fontSize: 11, color: '#888' }}>
+                (turn off if your template already has printed labels like "Student Name:")
+              </span>
+            </div>
+          </div>
         </div>
       </Col>
 

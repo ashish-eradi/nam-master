@@ -22,51 +22,88 @@ from app.models.finance import Payment as PaymentModel
 
 # ---------------------------------------------------------------------------
 # Font setup — DejaVu TTF supports ₹ and full Unicode.
-# Priority: (1) system fonts (Docker rebuild), (2) /tmp cache, (3) download.
-# Falls back to built-in Helvetica if all else fails (₹ will be a black box).
+# Priority: (1) system fonts (Dockerfile fonts-dejavu-core), (2) /tmp cache,
+# (3) download from multiple CDN mirrors with timeout.
+# _RUPEE is always safe to print: '\u20b9' when DejaVu loaded, 'Rs.' otherwise.
 # ---------------------------------------------------------------------------
 _FNT_N  = 'Helvetica'
 _FNT_B  = 'Helvetica-Bold'
 _FNT_I  = 'Helvetica-Oblique'
 _FNT_BI = 'Helvetica-BoldOblique'
+_RUPEE  = 'Rs.'       # guaranteed fallback; updated to '\u20b9' when DejaVu loads
+_DEJAVU_LOADED = False
 
-def _setup_dejavu():
+def _try_load_dejavu() -> bool:
+    """Try to register DejaVu fonts. Safe to call multiple times (no-op if already loaded)."""
+    global _FNT_N, _FNT_B, _FNT_I, _FNT_BI, _RUPEE, _DEJAVU_LOADED
+    if _DEJAVU_LOADED:
+        return True
+
     import urllib.request as _ul
     _names = ['DejaVuSans', 'DejaVuSans-Bold', 'DejaVuSans-Oblique', 'DejaVuSans-BoldOblique']
-    # 1. Try system path (set by Dockerfile fonts-dejavu-core)
+
+    # 1. System fonts installed via apt (Dockerfile: fonts-dejavu-core)
     _sys = {n: f'/usr/share/fonts/truetype/dejavu/{n}.ttf' for n in _names}
     if all(os.path.exists(p) for p in _sys.values()):
-        return _sys
-    # 2. Try /tmp cache
-    _tmp = {n: f'/tmp/nam_fonts/{n}.ttf' for n in _names}
-    if all(os.path.exists(p) for p in _tmp.values()):
-        return _tmp
-    # 3. Download from jsDelivr CDN (GitHub mirror, reliable)
-    try:
-        os.makedirs('/tmp/nam_fonts', exist_ok=True)
-        _base = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@version_2_37/ttf/'
-        for n, p in _tmp.items():
-            if not os.path.exists(p):
-                _ul.urlretrieve(f'{_base}{n}.ttf', p)
+        _paths = _sys
+    else:
+        _tmp = {n: f'/tmp/nam_fonts/{n}.ttf' for n in _names}
+        # 2. Already downloaded in a previous call this container session
         if all(os.path.exists(p) for p in _tmp.values()):
-            return _tmp
-    except Exception:
-        pass
-    return None
+            _paths = _tmp
+        else:
+            # 3. Download from multiple CDN mirrors (first one that succeeds wins)
+            _paths = None
+            _mirrors = [
+                'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@version_2_37/ttf/',
+                'https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/version_2_37/ttf/',
+            ]
+            try:
+                os.makedirs('/tmp/nam_fonts', exist_ok=True)
+            except Exception:
+                return False
 
-try:
-    from reportlab.pdfbase.ttfonts import TTFont as _TTFont
-    from reportlab.pdfbase import pdfmetrics as _pm
-    _dv_paths = _setup_dejavu()
-    if _dv_paths:
-        for _n, _p in _dv_paths.items():
+            for _base in _mirrors:
+                try:
+                    for n in _names:
+                        p = f'/tmp/nam_fonts/{n}.ttf'
+                        if not os.path.exists(p):
+                            req = _ul.Request(f'{_base}{n}.ttf')
+                            with _ul.urlopen(req, timeout=10) as resp:
+                                with open(p, 'wb') as fh:
+                                    fh.write(resp.read())
+                    if all(os.path.exists(f'/tmp/nam_fonts/{n}.ttf') for n in _names):
+                        _paths = _tmp
+                        break
+                except Exception:
+                    # Remove partial downloads before trying next mirror
+                    for n in _names:
+                        p = f'/tmp/nam_fonts/{n}.ttf'
+                        try:
+                            if os.path.exists(p):
+                                os.remove(p)
+                        except Exception:
+                            pass
+            if _paths is None:
+                return False
+
+    try:
+        from reportlab.pdfbase.ttfonts import TTFont as _TTFont
+        from reportlab.pdfbase import pdfmetrics as _pm
+        for _n, _p in _paths.items():
             _pm.registerFont(_TTFont(_n, _p))
         _FNT_N  = 'DejaVuSans'
         _FNT_B  = 'DejaVuSans-Bold'
         _FNT_I  = 'DejaVuSans-Oblique'
         _FNT_BI = 'DejaVuSans-BoldOblique'
-except Exception:
-    pass
+        _RUPEE  = '\u20b9'
+        _DEJAVU_LOADED = True
+        return True
+    except Exception:
+        return False
+
+# Attempt at import time — succeeds immediately when system fonts are present
+_try_load_dejavu()
 
 
 PAGE_SIZES = {
@@ -144,6 +181,11 @@ def _build_ctx(print_settings: dict, doc_type: str) -> dict:
         'has_custom_template': bool(
             doc_settings.get('custom_template_data') or doc_settings.get('custom_template_url')
         ),
+        # Custom template overlay controls (set via Print Settings UI)
+        # custom_content_top: % from top where data block starts (default 30)
+        'custom_content_top': doc_settings.get('custom_content_top', 30),
+        # custom_show_labels: whether to draw "Student Name:" etc. (default True)
+        'custom_show_labels': doc_settings.get('custom_show_labels', True),
     }
 
 
@@ -167,22 +209,25 @@ class PDFReceiptService:
                          total_outstanding: float = 0.0,
                          print_settings: Optional[dict] = None) -> BytesIO:
         """Generate a professional PDF receipt for a payment."""
+        _try_load_dejavu()  # retry font load if startup attempt failed
         ctx = _build_ctx(print_settings or {}, 'receipt')
 
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=ctx['pagesize'])
 
-        custom_tpl = ctx.get('custom_template_url')
-        if custom_tpl:
-            y = PDFReceiptService._apply_custom_template(pdf, custom_tpl, ctx)
+        if ctx.get('has_custom_template'):
+            # Custom template mode: draw template background, then overlay only raw data
+            PDFReceiptService._apply_custom_template(pdf, ctx.get('custom_template_url', ''), ctx)
+            PDFReceiptService._draw_simple_receipt_data(pdf, payment, ctx, father_name, total_outstanding)
         else:
+            # Standard mode: full structured layout
             y = PDFReceiptService._draw_receipt_header(pdf, payment, ctx, school_logo_path)
-        y = PDFReceiptService._draw_receipt_number(pdf, payment.receipt_number, y, ctx)
-        y = PDFReceiptService._draw_details_section(pdf, payment, y, ctx, father_name=father_name)
-        y = PDFReceiptService._draw_payment_table(pdf, payment, y, ctx)
-        y = PDFReceiptService._draw_amount_in_words(pdf, payment.amount_paid, y, ctx)
-        y = PDFReceiptService._draw_outstanding_balance(pdf, total_outstanding, y, ctx)
-        PDFReceiptService._draw_footer(pdf, payment, ctx)
+            y = PDFReceiptService._draw_receipt_number(pdf, payment.receipt_number, y, ctx)
+            y = PDFReceiptService._draw_details_section(pdf, payment, y, ctx, father_name=father_name)
+            y = PDFReceiptService._draw_payment_table(pdf, payment, y, ctx)
+            y = PDFReceiptService._draw_amount_in_words(pdf, payment.amount_paid, y, ctx)
+            y = PDFReceiptService._draw_outstanding_balance(pdf, total_outstanding, y, ctx)
+            PDFReceiptService._draw_footer(pdf, payment, ctx)
 
         pdf.save()
         buffer.seek(0)
@@ -247,6 +292,115 @@ class PDFReceiptService:
             return H - margin
 
         return H - margin
+
+    @staticmethod
+    def _draw_simple_receipt_data(pdf: canvas.Canvas, payment: PaymentModel,
+                                   ctx: dict, father_name: Optional[str] = None,
+                                   total_outstanding: float = 0.0):
+        """Draw only raw data values for custom template mode.
+        No boxes, no fills, no structural headers — template provides all visual structure."""
+        W, margin = ctx['width'], ctx['margin']
+        H = ctx['height']
+
+        # Content start: configurable % from top (default 30%)
+        content_top_pct = ctx.get('custom_content_top', 30)
+        y = H * (1.0 - content_top_pct / 100.0)
+        show_labels = ctx.get('custom_show_labels', True)
+
+        fs_label = _fs(10, ctx)
+        fs_value = _fs(10, ctx)
+        line_gap = _sp(0.26 * inch, ctx)
+        label_w  = _sp(1.3 * inch, ctx)
+        col2_x   = W / 2
+
+        # Receipt No + Date on same line
+        receipt_no  = payment.receipt_number
+        date_str    = payment.payment_date.strftime("%d %B %Y")
+        pdf.setFont(_FNT_B, _fs(11, ctx))
+        if show_labels:
+            pdf.drawString(margin, y, f"Receipt No: {receipt_no}")
+            pdf.drawRightString(W - margin, y, f"Date: {date_str}")
+        else:
+            pdf.drawString(margin, y, receipt_no)
+            pdf.drawRightString(W - margin, y, date_str)
+        y -= line_gap * 1.2
+
+        # Student details as two-column key–value pairs
+        student_name = f"{payment.student.first_name} {payment.student.last_name}"
+        admission_no = payment.student.admission_number
+        class_name   = getattr(payment.student.class_, 'name', 'N/A') if payment.student.class_ else 'N/A'
+        rows = [
+            ("Student Name:", student_name),
+            ("Admission No:", admission_no),
+            ("Father's Name:", father_name or "N/A"),
+            ("Class:", class_name),
+            ("Payment Mode:", payment.payment_mode.upper()),
+        ]
+        if payment.transaction_id:
+            rows.append(("Transaction ID:", payment.transaction_id))
+
+        for i, (lbl, val) in enumerate(rows):
+            x = margin if i % 2 == 0 else col2_x
+            if show_labels:
+                pdf.setFont(_FNT_B, fs_label)
+                pdf.drawString(x, y, lbl)
+                pdf.setFont(_FNT_N, fs_value)
+                pdf.drawString(x + label_w, y, str(val))
+            else:
+                pdf.setFont(_FNT_N, fs_value)
+                pdf.drawString(x, y, str(val))
+            if i % 2 == 1 or i == len(rows) - 1:
+                y -= line_gap
+
+        y -= line_gap * 0.5
+
+        # Fee breakdown — plain list, right-aligned amounts
+        if show_labels:
+            pdf.setFont(_FNT_B, _fs(10, ctx))
+            pdf.drawString(margin, y, "Fee Details:")
+            y -= line_gap
+
+        total = Decimal('0')
+        for detail in payment.payment_details:
+            fee_name = detail.fee.fee_name if detail.fee else "Fee"
+            amount   = Decimal(str(detail.amount))
+            total   += amount
+            pdf.setFont(_FNT_N, _fs(9, ctx))
+            if show_labels:
+                pdf.drawString(margin + _sp(0.15 * inch, ctx), y, f"\u2022  {fee_name}")
+            else:
+                pdf.drawString(margin, y, fee_name)
+            pdf.drawRightString(W - margin, y, f"{_RUPEE}{amount:,.2f}")
+            y -= line_gap * 0.9
+
+        # Divider line + total
+        y -= _sp(0.06 * inch, ctx)
+        pdf.setLineWidth(0.5)
+        pdf.line(margin, y, W - margin, y)
+        y -= _sp(0.12 * inch, ctx)
+        pdf.setFont(_FNT_B, _fs(11, ctx))
+        if show_labels:
+            pdf.drawString(margin, y, "Total Paid:")
+        pdf.drawRightString(W - margin, y, f"{_RUPEE}{total:,.2f}")
+        y -= line_gap * 1.3
+
+        # Outstanding balance — plain text, no box
+        if total_outstanding > 0:
+            pdf.setFillColorRGB(0.6, 0.2, 0)
+            pdf.setFont(_FNT_B, _fs(10, ctx))
+            if show_labels:
+                pdf.drawString(margin, y, f"Outstanding Balance: {_RUPEE}{total_outstanding:,.2f}")
+                pdf.setFont(_FNT_N, _fs(8, ctx))
+                pdf.drawString(margin, y - _sp(0.18 * inch, ctx),
+                               "Please clear remaining dues at the earliest.")
+            else:
+                pdf.drawString(margin, y, f"{_RUPEE}{total_outstanding:,.2f}")
+        else:
+            pdf.setFillColorRGB(0, 0.5, 0)
+            pdf.setFont(_FNT_N, _fs(10, ctx))
+            if show_labels:
+                pdf.drawString(margin, y, "All Dues Cleared — No Outstanding Balance")
+        pdf.setFillColorRGB(0, 0, 0)
 
     @staticmethod
     def _merge_pdf_template_bytes(content_buffer: BytesIO, template_bytes: bytes) -> BytesIO:
@@ -407,7 +561,7 @@ class PDFReceiptService:
     @staticmethod
     def _draw_payment_table(pdf: canvas.Canvas, payment: PaymentModel, y: float, ctx: dict) -> float:
         W, margin = ctx['width'], ctx['margin']
-        data = [["S.No", "Fee Type", "Amount (\u20b9)"]]
+        data = [["S.No", "Fee Type", f"Amount ({_RUPEE})"]]
         total = Decimal('0')
         for i, detail in enumerate(payment.payment_details, 1):
             fee_name = detail.fee.fee_name if detail.fee else "Fee"
@@ -495,7 +649,7 @@ class PDFReceiptService:
             pdf.setFont(_FNT_B, _fs(12, ctx))
             pdf.setFillColorRGB(0.6, 0.2, 0)
             pdf.drawCentredString(W / 2, y - _sp(0.25 * inch, ctx),
-                                  f"Outstanding Balance: \u20b9{total_outstanding:,.2f}")
+                                  f"Outstanding Balance: {_RUPEE}{total_outstanding:,.2f}")
             pdf.setFont(_FNT_N, _fs(8, ctx))
             pdf.setFillColorRGB(0.4, 0.4, 0.4)
             pdf.drawCentredString(W / 2, y - _sp(0.48 * inch, ctx),
@@ -538,32 +692,32 @@ class PDFReceiptService:
                                installments: list = None,
                                print_settings: Optional[dict] = None) -> BytesIO:
         """Generate a professional PDF fee due slip for a student."""
+        _try_load_dejavu()  # retry font load if startup attempt failed
         ctx = _build_ctx(print_settings or {}, 'fee_due')
 
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=ctx['pagesize'])
 
-        custom_tpl = ctx.get('custom_template_url')
-        if custom_tpl:
-            y = PDFReceiptService._apply_custom_template(pdf, custom_tpl, ctx)
+        if ctx.get('has_custom_template'):
+            # Custom template mode: draw template background, then overlay only raw data
+            PDFReceiptService._apply_custom_template(pdf, ctx.get('custom_template_url', ''), ctx)
+            PDFReceiptService._draw_simple_fee_due_data(pdf, student_data, outstanding_data,
+                                                         installments, ctx)
         else:
+            # Standard mode: full structured layout
             y = PDFReceiptService._draw_due_slip_header(pdf, student_data, ctx)
-
-        pdf.setFont(_FNT_B, _fs(17, ctx))
-        r, g, b = ctx['primary_rgb']
-        pdf.setFillColorRGB(r, g, b)
-        pdf.drawCentredString(ctx['width'] / 2, y, "FEE DUE NOTICE")
-        pdf.setFillColorRGB(0, 0, 0)
-        y -= _sp(0.45 * inch, ctx)
-
-        y = PDFReceiptService._draw_due_slip_student_details(pdf, student_data, y, ctx)
-        y = PDFReceiptService._draw_outstanding_table(pdf, outstanding_data, y, ctx)
-
-        if installments and len(installments) > 0:
-            y = PDFReceiptService._draw_overdue_installments(pdf, installments, y, ctx)
-
-        PDFReceiptService._draw_payment_instructions(pdf, outstanding_data, y, ctx)
-        PDFReceiptService._draw_due_slip_footer(pdf, ctx)
+            pdf.setFont(_FNT_B, _fs(17, ctx))
+            r, g, b = ctx['primary_rgb']
+            pdf.setFillColorRGB(r, g, b)
+            pdf.drawCentredString(ctx['width'] / 2, y, "FEE DUE NOTICE")
+            pdf.setFillColorRGB(0, 0, 0)
+            y -= _sp(0.45 * inch, ctx)
+            y = PDFReceiptService._draw_due_slip_student_details(pdf, student_data, y, ctx)
+            y = PDFReceiptService._draw_outstanding_table(pdf, outstanding_data, y, ctx)
+            if installments and len(installments) > 0:
+                y = PDFReceiptService._draw_overdue_installments(pdf, installments, y, ctx)
+            PDFReceiptService._draw_payment_instructions(pdf, outstanding_data, y, ctx)
+            PDFReceiptService._draw_due_slip_footer(pdf, ctx)
 
         pdf.save()
         buffer.seek(0)
@@ -574,6 +728,104 @@ class PDFReceiptService:
             buffer = PDFReceiptService._merge_pdf_template_bytes(buffer, pdf_tpl_bytes)
 
         return buffer
+
+    @staticmethod
+    def _draw_simple_fee_due_data(pdf: canvas.Canvas, student_data: dict,
+                                   outstanding_data: dict, installments: list, ctx: dict):
+        """Draw only raw fee-due data for custom template mode — no boxes, no fills."""
+        W, margin = ctx['width'], ctx['margin']
+        H = ctx['height']
+
+        # Content start: configurable % from top (default 30%)
+        content_top_pct = ctx.get('custom_content_top', 30)
+        y = H * (1.0 - content_top_pct / 100.0)
+        show_labels = ctx.get('custom_show_labels', True)
+
+        line_gap = _sp(0.26 * inch, ctx)
+        label_w  = _sp(1.5 * inch, ctx)
+        col2_x   = W / 2
+
+        # Issue date + academic year
+        issue_date = datetime.now().strftime("%d %B %Y")
+        pdf.setFont(_FNT_B, _fs(11, ctx))
+        if show_labels:
+            pdf.drawString(margin, y, f"Issue Date: {issue_date}")
+            pdf.drawRightString(W - margin, y, f"Academic Year: {student_data.get('academic_year', '')}")
+        else:
+            pdf.drawString(margin, y, issue_date)
+            pdf.drawRightString(W - margin, y, str(student_data.get('academic_year', '')))
+        y -= line_gap * 1.3
+
+        # Student details — two-column
+        rows = [
+            ("Student Name:", student_data.get('student_name', '')),
+            ("Admission No:", student_data.get('admission_number', '')),
+            ("Class:", student_data.get('class_name', '')),
+            ("Father's Name:", student_data.get('father_name', '')),
+        ]
+        fs = _fs(10, ctx)
+        for i, (lbl, val) in enumerate(rows):
+            x = margin if i % 2 == 0 else col2_x
+            if show_labels:
+                pdf.setFont(_FNT_B, fs)
+                pdf.drawString(x, y, lbl)
+                pdf.setFont(_FNT_N, fs)
+                pdf.drawString(x + label_w, y, str(val))
+            else:
+                pdf.setFont(_FNT_N, fs)
+                pdf.drawString(x, y, str(val))
+            if i % 2 == 1 or i == len(rows) - 1:
+                y -= line_gap
+
+        y -= line_gap * 0.5
+
+        # Outstanding fee list — plain text
+        if show_labels:
+            pdf.setFont(_FNT_B, _fs(10, ctx))
+            pdf.drawString(margin, y, "Outstanding Fees:")
+            y -= line_gap
+
+        by_fee = outstanding_data.get('by_fee', [])
+        for fee in by_fee:
+            fee_name    = fee.get('fee_name', '')
+            outstanding = fee.get('outstanding', 0)
+            pdf.setFont(_FNT_N, _fs(9, ctx))
+            if show_labels:
+                pdf.drawString(margin + _sp(0.15 * inch, ctx), y, f"\u2022  {fee_name}")
+            else:
+                pdf.drawString(margin, y, fee_name)
+            pdf.drawRightString(W - margin, y, f"{_RUPEE}{outstanding:,.2f}")
+            y -= line_gap * 0.9
+
+        # Total outstanding
+        total_outstanding = outstanding_data.get('total_outstanding', 0)
+        y -= _sp(0.06 * inch, ctx)
+        pdf.setLineWidth(0.5)
+        pdf.line(margin, y, W - margin, y)
+        y -= _sp(0.12 * inch, ctx)
+        pdf.setFont(_FNT_B, _fs(11, ctx))
+        pdf.setFillColorRGB(0.6, 0.2, 0)
+        if show_labels:
+            pdf.drawString(margin, y, f"Total Outstanding: {_RUPEE}{total_outstanding:,.2f}")
+        else:
+            pdf.drawString(margin, y, f"{_RUPEE}{total_outstanding:,.2f}")
+        pdf.setFillColorRGB(0, 0, 0)
+
+        # Overdue installments (if any)
+        if installments:
+            y -= line_gap * 1.5
+            pdf.setFont(_FNT_B, _fs(10, ctx))
+            pdf.drawString(margin, y, "Overdue Installments:")
+            y -= line_gap
+            pdf.setFont(_FNT_N, _fs(9, ctx))
+            for inst in installments[:5]:
+                fee_name    = inst.get('fee_name', '')
+                due_date    = inst.get('due_date', '')
+                amount      = inst.get('amount', 0)
+                days_ov     = inst.get('days_overdue', 0)
+                pdf.drawString(margin + _sp(0.15 * inch, ctx), y,
+                               f"\u2022  {fee_name} — Due: {due_date} — {_RUPEE}{amount:,.2f} ({days_ov} days overdue)")
+                y -= line_gap * 0.9
 
     @staticmethod
     def _draw_due_slip_header(pdf: canvas.Canvas, student_data: dict, ctx: dict) -> float:
@@ -652,12 +904,12 @@ class PDFReceiptService:
             data.append([
                 str(i),
                 fee.get('fee_name', ''),
-                f"\u20b9{fee.get('final_amount', 0):,.2f}",
-                f"\u20b9{fee.get('amount_paid', 0):,.2f}",
-                f"\u20b9{fee.get('outstanding', 0):,.2f}",
+                f"{_RUPEE}{fee.get('final_amount', 0):,.2f}",
+                f"{_RUPEE}{fee.get('amount_paid', 0):,.2f}",
+                f"{_RUPEE}{fee.get('outstanding', 0):,.2f}",
             ])
         total_outstanding = outstanding_data.get('total_outstanding', 0)
-        data.append(["", "TOTAL OUTSTANDING", "", "", f"\u20b9{total_outstanding:,.2f}"])
+        data.append(["", "TOTAL OUTSTANDING", "", "", f"{_RUPEE}{total_outstanding:,.2f}"])
 
         usable = W - 2 * margin
         col_widths = [usable * 0.09, usable * 0.37, usable * 0.18, usable * 0.18, usable * 0.18]
@@ -715,7 +967,7 @@ class PDFReceiptService:
             due_date = inst.get('due_date', '')
             amount = inst.get('amount', 0)
             days_overdue = inst.get('days_overdue', 0)
-            text = f"\u2022 {fee_name} \u2013 Due: {due_date} \u2013 \u20b9{amount:,.2f} ({days_overdue} days overdue)"
+            text = f"\u2022 {fee_name} \u2013 Due: {due_date} \u2013 {_RUPEE}{amount:,.2f} ({days_overdue} days overdue)"
             pdf.drawString(margin + _sp(0.15 * inch, ctx), y, text)
             y -= _sp(0.18 * inch, ctx)
 
@@ -737,7 +989,7 @@ class PDFReceiptService:
 
         pdf.setFont(_FNT_B, _fs(13, ctx))
         pdf.drawCentredString(W / 2, y - _sp(0.28 * inch, ctx),
-                              f"Please Pay: \u20b9{total_outstanding:,.2f}")
+                              f"Please Pay: {_RUPEE}{total_outstanding:,.2f}")
         pdf.setFont(_FNT_N, _fs(9, ctx))
         pdf.drawCentredString(W / 2, y - _sp(0.52 * inch, ctx),
                               "Payment is requested at the earliest to avoid any inconvenience.")

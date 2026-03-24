@@ -1588,12 +1588,15 @@ def update_print_settings(
     if not school:
         raise HTTPException(status_code=404, detail="School not found")
     current = dict(school.settings or {})
-    # Preserve existing template paths when updating other settings
+    # Preserve existing template data when updating other settings
+    # (frontend never sends template binary fields, so keep what's in DB)
     existing_print = current.get('print', {})
+    _tpl_keys = ('custom_template_url', 'custom_template_data', 'custom_template_ext')
     for doc_type in ('receipt', 'fee_due'):
         if doc_type in body and doc_type in existing_print:
-            if 'custom_template_url' in existing_print[doc_type] and 'custom_template_url' not in body.get(doc_type, {}):
-                body[doc_type]['custom_template_url'] = existing_print[doc_type]['custom_template_url']
+            for key in _tpl_keys:
+                if key in existing_print[doc_type] and key not in body.get(doc_type, {}):
+                    body[doc_type][key] = existing_print[doc_type][key]
     current['print'] = body
     school.settings = current
     flag_modified(school, 'settings')
