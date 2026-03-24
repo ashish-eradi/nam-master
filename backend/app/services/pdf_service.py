@@ -20,26 +20,47 @@ from sqlalchemy.orm import Session
 from app.models.finance import Payment as PaymentModel
 
 
-# Font constants — use DejaVu TTF (supports ₹ and full Unicode) if available,
-# otherwise fall back to built-in Helvetica (which lacks the ₹ glyph).
-_FNT_N  = _FNT_N
-_FNT_B  = _FNT_B
+# ---------------------------------------------------------------------------
+# Font setup — DejaVu TTF supports ₹ and full Unicode.
+# Priority: (1) system fonts (Docker rebuild), (2) /tmp cache, (3) download.
+# Falls back to built-in Helvetica if all else fails (₹ will be a black box).
+# ---------------------------------------------------------------------------
+_FNT_N  = 'Helvetica'
+_FNT_B  = 'Helvetica-Bold'
 _FNT_I  = 'Helvetica-Oblique'
 _FNT_BI = 'Helvetica-BoldOblique'
+
+def _setup_dejavu():
+    import urllib.request as _ul
+    _names = ['DejaVuSans', 'DejaVuSans-Bold', 'DejaVuSans-Oblique', 'DejaVuSans-BoldOblique']
+    # 1. Try system path (set by Dockerfile fonts-dejavu-core)
+    _sys = {n: f'/usr/share/fonts/truetype/dejavu/{n}.ttf' for n in _names}
+    if all(os.path.exists(p) for p in _sys.values()):
+        return _sys
+    # 2. Try /tmp cache
+    _tmp = {n: f'/tmp/nam_fonts/{n}.ttf' for n in _names}
+    if all(os.path.exists(p) for p in _tmp.values()):
+        return _tmp
+    # 3. Download from jsDelivr CDN (GitHub mirror, reliable)
+    try:
+        os.makedirs('/tmp/nam_fonts', exist_ok=True)
+        _base = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@2.37/ttf/'
+        for n, p in _tmp.items():
+            if not os.path.exists(p):
+                _ul.urlretrieve(f'{_base}{n}.ttf', p)
+        if all(os.path.exists(p) for p in _tmp.values()):
+            return _tmp
+    except Exception:
+        pass
+    return None
+
 try:
-    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfbase.ttfonts import TTFont as _TTFont
     from reportlab.pdfbase import pdfmetrics as _pm
-    _dv_dir = '/usr/share/fonts/truetype/dejavu/'
-    _dv_map = {
-        'DejaVuSans':            _dv_dir + 'DejaVuSans.ttf',
-        'DejaVuSans-Bold':       _dv_dir + 'DejaVuSans-Bold.ttf',
-        'DejaVuSans-Oblique':    _dv_dir + 'DejaVuSans-Oblique.ttf',
-        'DejaVuSans-BoldOblique':_dv_dir + 'DejaVuSans-BoldOblique.ttf',
-    }
-    _all_ok = all(os.path.exists(p) for p in _dv_map.values())
-    if _all_ok:
-        for _name, _path in _dv_map.items():
-            _pm.registerFont(TTFont(_name, _path))
+    _dv_paths = _setup_dejavu()
+    if _dv_paths:
+        for _n, _p in _dv_paths.items():
+            _pm.registerFont(_TTFont(_n, _p))
         _FNT_N  = 'DejaVuSans'
         _FNT_B  = 'DejaVuSans-Bold'
         _FNT_I  = 'DejaVuSans-Oblique'
@@ -116,6 +137,9 @@ def _build_ctx(print_settings: dict, doc_type: str) -> dict:
         'show_logo': doc_settings.get('show_logo', True),
         'show_signature': doc_settings.get('show_signature', True),
         'custom_template_url': doc_settings.get('custom_template_url'),
+        # Base64-encoded template binary stored in DB (persists across restarts)
+        'custom_template_data': doc_settings.get('custom_template_data'),
+        'custom_template_ext': doc_settings.get('custom_template_ext', ''),
     }
 
 
@@ -160,11 +184,9 @@ class PDFReceiptService:
         buffer.seek(0)
 
         # Post-process: merge content on top of PDF template background
-        custom_tpl = ctx.get('custom_template_url')
-        if custom_tpl and custom_tpl.lower().endswith('.pdf'):
-            fs_path = '/app' + custom_tpl
-            if os.path.exists(fs_path):
-                buffer = PDFReceiptService._merge_pdf_template(buffer, fs_path)
+        pdf_tpl_bytes = ctx.get('_pdf_tpl_bytes')
+        if pdf_tpl_bytes:
+            buffer = PDFReceiptService._merge_pdf_template_bytes(buffer, pdf_tpl_bytes)
 
         return buffer
 
@@ -173,48 +195,67 @@ class PDFReceiptService:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _apply_custom_template(pdf: canvas.Canvas, template_url: str, ctx: dict) -> float:
-        """Draw a custom uploaded template as a full-page background.
-        Data is then overlaid on top so it fills the template's boxes.
-        Returns the y position for content to start (near top, with margin)."""
-        # Convert URL path to filesystem path
-        fs_path = "/app" + template_url
-        if not os.path.exists(fs_path):
-            return ctx['height'] - ctx['margin']
+    def _get_template_bytes(ctx: dict) -> Optional[bytes]:
+        """Resolve template binary from DB base64 (primary) or file path (fallback)."""
+        import base64
+        # Primary: base64 stored in DB — always available regardless of filesystem
+        b64 = ctx.get('custom_template_data')
+        if b64:
+            try:
+                return base64.b64decode(b64)
+            except Exception:
+                pass
+        # Fallback: file on disk (works in local Docker, may be absent on Render restart)
+        url = ctx.get('custom_template_url')
+        if url:
+            for base in ('/app', ''):
+                fs_path = base + url
+                if os.path.exists(fs_path):
+                    try:
+                        with open(fs_path, 'rb') as f:
+                            return f.read()
+                    except Exception:
+                        pass
+        return None
 
-        ext = os.path.splitext(fs_path)[1].lower()
+    @staticmethod
+    def _apply_custom_template(pdf: canvas.Canvas, template_url: str, ctx: dict) -> float:
+        """Draw template as full-page background (PNG/JPG) or schedule PDF merge.
+        Returns the y start position for content."""
         W, H, margin = ctx['width'], ctx['height'], ctx['margin']
+        ext = (ctx.get('custom_template_ext') or os.path.splitext(template_url)[1]).lower()
+        file_bytes = PDFReceiptService._get_template_bytes(ctx)
+
+        if file_bytes is None:
+            return H - margin
 
         if ext in ('.png', '.jpg', '.jpeg'):
             from reportlab.lib.utils import ImageReader
             try:
-                # Draw as full-page background so data overlays template boxes
-                pdf.drawImage(fs_path, 0, 0, width=W, height=H,
-                              preserveAspectRatio=False)
-                # Content starts from top with normal margin
-                return H - margin
+                pdf.drawImage(ImageReader(BytesIO(file_bytes)), 0, 0,
+                              width=W, height=H, preserveAspectRatio=False)
             except Exception:
-                return H - margin
+                pass
+            return H - margin
         elif ext == '.pdf':
-            # PDF template is merged in post-processing via _merge_pdf_template;
-            # nothing to draw on the canvas here — just return the start y.
+            # Store bytes in ctx; merged into final PDF after canvas.save()
+            ctx['_pdf_tpl_bytes'] = file_bytes
             return H - margin
 
         return H - margin
 
     @staticmethod
-    def _merge_pdf_template(content_buffer: BytesIO, template_path: str) -> BytesIO:
-        """Overlay content PDF on top of a PDF template background using PyPDF2."""
+    def _merge_pdf_template_bytes(content_buffer: BytesIO, template_bytes: bytes) -> BytesIO:
+        """Overlay ReportLab-generated content on top of a PDF template background."""
         try:
             from PyPDF2 import PdfReader, PdfWriter
-            template_reader = PdfReader(template_path)
+            template_reader = PdfReader(BytesIO(template_bytes))
             content_reader = PdfReader(content_buffer)
             if not template_reader.pages or not content_reader.pages:
                 content_buffer.seek(0)
                 return content_buffer
             template_page = template_reader.pages[0]
             content_page = content_reader.pages[0]
-            # Merge: content drawn on top of the template background
             template_page.merge_page(content_page)
             writer = PdfWriter()
             writer.add_page(template_page)
@@ -516,11 +557,9 @@ class PDFReceiptService:
         buffer.seek(0)
 
         # Post-process: merge content on top of PDF template background
-        custom_tpl = ctx.get('custom_template_url')
-        if custom_tpl and custom_tpl.lower().endswith('.pdf'):
-            fs_path = '/app' + custom_tpl
-            if os.path.exists(fs_path):
-                buffer = PDFReceiptService._merge_pdf_template(buffer, fs_path)
+        pdf_tpl_bytes = ctx.get('_pdf_tpl_bytes')
+        if pdf_tpl_bytes:
+            buffer = PDFReceiptService._merge_pdf_template_bytes(buffer, pdf_tpl_bytes)
 
         return buffer
 

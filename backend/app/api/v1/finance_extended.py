@@ -1616,6 +1616,7 @@ async def upload_print_template(
     school_id: str = Depends(get_current_user_school)
 ):
     """Upload a custom template image/PDF for receipts or fee due slips."""
+    import base64
     if doc_type not in ("receipt", "fee_due"):
         raise HTTPException(status_code=400, detail="doc_type must be 'receipt' or 'fee_due'")
 
@@ -1623,17 +1624,24 @@ async def upload_print_template(
     if ext not in ALLOWED_TEMPLATE_EXTS:
         raise HTTPException(status_code=400, detail=f"Allowed file types: PNG, JPG, PDF")
 
-    save_dir = TEMPLATE_UPLOAD_DIR / str(school_id)
-    save_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{doc_type}_template{ext}"
-    file_path = save_dir / filename
+    # Read file content once
+    file_content = await file.read()
 
-    with file_path.open("wb") as buf:
-        shutil.copyfileobj(file.file, buf)
+    # Also save to disk (best-effort — may be lost on restart but that's fine)
+    try:
+        save_dir = TEMPLATE_UPLOAD_DIR / str(school_id)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{doc_type}_template{ext}"
+        file_path = save_dir / filename
+        with file_path.open("wb") as buf:
+            buf.write(file_content)
+        template_url = f"/uploads/templates/{school_id}/{filename}"
+    except Exception:
+        template_url = f"/uploads/templates/{school_id}/{doc_type}_template{ext}"
 
-    template_url = f"/uploads/templates/{school_id}/{filename}"
+    # Store the binary content as base64 in the DB (persists across restarts)
+    template_b64 = base64.b64encode(file_content).decode('utf-8')
 
-    # Save URL into school print settings
     from app.models.school import School as SchoolModel
     from sqlalchemy.orm.attributes import flag_modified
     school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
@@ -1642,6 +1650,8 @@ async def upload_print_template(
     if doc_type not in print_s:
         print_s[doc_type] = {}
     print_s[doc_type]['custom_template_url'] = template_url
+    print_s[doc_type]['custom_template_data'] = template_b64   # base64 binary
+    print_s[doc_type]['custom_template_ext'] = ext              # e.g. '.pdf', '.png'
     current['print'] = print_s
     school.settings = current
     flag_modified(school, 'settings')
@@ -1667,6 +1677,8 @@ def remove_print_template(
     print_s = current.get('print', {})
     if doc_type in print_s:
         old_url = print_s[doc_type].pop('custom_template_url', None)
+        print_s[doc_type].pop('custom_template_data', None)
+        print_s[doc_type].pop('custom_template_ext', None)
         if old_url:
             try:
                 old_path = FilePath("/app") / old_url.lstrip("/")
