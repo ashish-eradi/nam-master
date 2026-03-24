@@ -148,6 +148,8 @@ const DefaultersReport: React.FC = () => {
   const [minOutstanding, setMinOutstanding] = useState(0);
   const [includeOverdueOnly, setIncludeOverdueOnly] = useState(true);
   const [includeTransportFees, setIncludeTransportFees] = useState(true);
+  const [filterClass, setFilterClass] = useState<string>('');
+  const [filterSection, setFilterSection] = useState<string>('');
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
 
@@ -252,7 +254,24 @@ const DefaultersReport: React.FC = () => {
     sorter: (a: any, b: any) => (a.transport_outstanding || 0) - (b.transport_outstanding || 0),
   };
 
-  const allStudents = data?.students || [];
+  const allStudentsRaw = data?.students || [];
+
+  // Unique class and section options derived from the full data
+  const classOptions = Array.from(new Set(allStudentsRaw.map((s: any) => s.class_name).filter(Boolean))).sort() as string[];
+  const sectionOptions = Array.from(new Set(
+    allStudentsRaw
+      .filter((s: any) => !filterClass || s.class_name === filterClass)
+      .map((s: any) => s.section)
+      .filter(Boolean)
+  )).sort() as string[];
+
+  // Apply class/section filter
+  const allStudents = allStudentsRaw.filter((s: any) => {
+    if (filterClass && s.class_name !== filterClass) return false;
+    if (filterSection && s.section !== filterSection) return false;
+    return true;
+  });
+
   const busStudents = allStudents.filter((s: any) => s.route_name);
   const schoolOnlyStudents = allStudents.filter((s: any) => !s.route_name || s.school_outstanding > 0);
 
@@ -359,6 +378,31 @@ const DefaultersReport: React.FC = () => {
             >
               <Option value={true}>Include Transport Fees</Option>
               <Option value={false}>School Fees Only</Option>
+            </Select>
+          </Col>
+          <Col xs={24} sm={6}>
+            <Select
+              value={filterClass}
+              onChange={(v) => { setFilterClass(v); setFilterSection(''); }}
+              style={{ width: '100%' }}
+              placeholder="All Classes"
+              allowClear
+              onClear={() => { setFilterClass(''); setFilterSection(''); }}
+            >
+              {classOptions.map((c) => <Option key={c} value={c}>{c}</Option>)}
+            </Select>
+          </Col>
+          <Col xs={24} sm={6}>
+            <Select
+              value={filterSection}
+              onChange={setFilterSection}
+              style={{ width: '100%' }}
+              placeholder="All Sections"
+              allowClear
+              onClear={() => setFilterSection('')}
+              disabled={!filterClass}
+            >
+              {sectionOptions.map((s) => <Option key={s} value={s}>Section {s}</Option>)}
             </Select>
           </Col>
         </Row>
