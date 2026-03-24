@@ -44,7 +44,7 @@ def _setup_dejavu():
     # 3. Download from jsDelivr CDN (GitHub mirror, reliable)
     try:
         os.makedirs('/tmp/nam_fonts', exist_ok=True)
-        _base = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@2.37/ttf/'
+        _base = 'https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@version_2_37/ttf/'
         for n, p in _tmp.items():
             if not os.path.exists(p):
                 _ul.urlretrieve(f'{_base}{n}.ttf', p)
@@ -140,6 +140,10 @@ def _build_ctx(print_settings: dict, doc_type: str) -> dict:
         # Base64-encoded template binary stored in DB (persists across restarts)
         'custom_template_data': doc_settings.get('custom_template_data'),
         'custom_template_ext': doc_settings.get('custom_template_ext', ''),
+        # When True: skip all opaque fills so template design shows through
+        'has_custom_template': bool(
+            doc_settings.get('custom_template_data') or doc_settings.get('custom_template_url')
+        ),
     }
 
 
@@ -351,7 +355,7 @@ class PDFReceiptService:
         border_w = text_width + _sp(0.4 * inch, ctx)
         border_h = _sp(0.33 * inch, ctx)
 
-        if ctx['template'] != 'minimal':
+        if not ctx.get('has_custom_template') and ctx['template'] != 'minimal':
             r, g, b = ctx['primary_rgb']
             pdf.setFillColorRGB(r * 0.15 + 0.85, g * 0.15 + 0.85, b * 0.15 + 0.85)
             pdf.rect(border_x, border_y, border_w, border_h, fill=1, stroke=1)
@@ -424,9 +428,8 @@ class PDFReceiptService:
         elif ctx['template'] == 'modern':
             header_bg = colors.Color(r * 0.85, g * 0.85, b * 0.85)
 
-        style = TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), header_bg),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        no_fill = ctx.get('has_custom_template', False)
+        style_cmds = [
             ('FONTNAME', (0, 0), (-1, 0), _FNT_B),
             ('FONTSIZE', (0, 0), (-1, 0), _fs(11, ctx)),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
@@ -435,14 +438,20 @@ class PDFReceiptService:
             ('ALIGN', (0, 1), (0, -1), 'CENTER'),
             ('ALIGN', (1, 1), (1, -1), 'LEFT'),
             ('ALIGN', (2, 1), (2, -1), 'RIGHT'),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e5e7eb')),
             ('FONTNAME', (0, -1), (-1, -1), _FNT_B),
             ('FONTSIZE', (0, -1), (-1, -1), _fs(10, ctx)),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.black),
             ('TOPPADDING', (0, 0), (-1, -1), _sp(6, ctx)),
             ('BOTTOMPADDING', (0, 0), (-1, -1), _sp(6, ctx)),
-        ])
+        ]
+        if not no_fill:
+            style_cmds += [
+                ('BACKGROUND', (0, 0), (-1, 0), header_bg),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e5e7eb')),
+            ]
+        style = TableStyle(style_cmds)
         table.setStyle(style)
         table_x = margin
         table.wrapOn(pdf, sum(col_widths), 400)
@@ -468,14 +477,17 @@ class PDFReceiptService:
         box_x = margin
         box_w = W - 2 * margin
 
+        no_fill = ctx.get('has_custom_template', False)
         if total_outstanding > 0:
-            pdf.setFillColorRGB(1, 0.95, 0.9)
             pdf.setStrokeColorRGB(0.85, 0.33, 0)
+            if not no_fill:
+                pdf.setFillColorRGB(1, 0.95, 0.9)
         else:
-            pdf.setFillColorRGB(0.9, 1, 0.9)
             pdf.setStrokeColorRGB(0, 0.6, 0)
+            if not no_fill:
+                pdf.setFillColorRGB(0.9, 1, 0.9)
 
-        pdf.rect(box_x, y - box_h, box_w, box_h, fill=1, stroke=1)
+        pdf.rect(box_x, y - box_h, box_w, box_h, fill=0 if no_fill else 1, stroke=1)
         pdf.setFillColorRGB(0, 0, 0)
         pdf.setStrokeColorRGB(0, 0, 0)
 
@@ -655,9 +667,8 @@ class PDFReceiptService:
         header_bg = colors.Color(r, g, b)
         total_bg = colors.Color(min(1, r + 0.85 * (1 - r)), min(1, g + 0.85 * (1 - g)), min(1, b + 0.85 * (1 - b)))
 
-        style = TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), header_bg),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        no_fill = ctx.get('has_custom_template', False)
+        due_style_cmds = [
             ('FONTNAME', (0, 0), (-1, 0), _FNT_B),
             ('FONTSIZE', (0, 0), (-1, 0), _fs(10, ctx)),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
@@ -666,15 +677,21 @@ class PDFReceiptService:
             ('ALIGN', (0, 1), (0, -1), 'CENTER'),
             ('ALIGN', (1, 1), (1, -1), 'LEFT'),
             ('ALIGN', (2, 1), (-1, -1), 'RIGHT'),
-            ('BACKGROUND', (0, -1), (-1, -1), total_bg),
             ('FONTNAME', (0, -1), (-1, -1), _FNT_B),
             ('FONTSIZE', (0, -1), (-1, -1), _fs(10, ctx)),
-            ('TEXTCOLOR', (0, -1), (-1, -1), colors.Color(r * 0.7, g * 0.7, b * 0.7)),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('LINEBELOW', (0, 0), (-1, 0), 2, colors.black),
             ('TOPPADDING', (0, 0), (-1, -1), _sp(6, ctx)),
             ('BOTTOMPADDING', (0, 0), (-1, -1), _sp(6, ctx)),
-        ])
+        ]
+        if not no_fill:
+            due_style_cmds += [
+                ('BACKGROUND', (0, 0), (-1, 0), header_bg),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('BACKGROUND', (0, -1), (-1, -1), total_bg),
+                ('TEXTCOLOR', (0, -1), (-1, -1), colors.Color(r * 0.7, g * 0.7, b * 0.7)),
+            ]
+        style = TableStyle(due_style_cmds)
         table.setStyle(style)
         table_x = margin
         table.wrapOn(pdf, sum(col_widths), 400)
@@ -712,8 +729,10 @@ class PDFReceiptService:
         box_bg = colors.Color(min(1, r + 0.92 * (1 - r)), min(1, g + 0.92 * (1 - g)), min(1, b + 0.92 * (1 - b)))
 
         box_h = _sp(0.75 * inch, ctx)
-        pdf.setFillColor(box_bg)
-        pdf.rect(margin, y - box_h, W - 2 * margin, box_h, fill=1, stroke=1)
+        no_fill = ctx.get('has_custom_template', False)
+        if not no_fill:
+            pdf.setFillColor(box_bg)
+        pdf.rect(margin, y - box_h, W - 2 * margin, box_h, fill=0 if no_fill else 1, stroke=1)
         pdf.setFillColorRGB(0, 0, 0)
 
         pdf.setFont(_FNT_B, _fs(13, ctx))
