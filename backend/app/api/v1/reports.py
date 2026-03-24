@@ -331,13 +331,16 @@ def get_defaulters_report(
             continue
 
         # Get overdue installments count and oldest due date
+        # Only count installments from fee structures that still have outstanding balance
+        # Include 'overdue' status in addition to 'pending' and 'partial'
         overdue_installments = db.query(FeeInstallmentModel).join(
             StudentFeeStructureModel, FeeInstallmentModel.student_fee_structure_id == StudentFeeStructureModel.id
         ).filter(
             StudentFeeStructureModel.student_id == student_data.id,
             StudentFeeStructureModel.academic_year == academic_year,
+            StudentFeeStructureModel.outstanding_amount > 0,
             FeeInstallmentModel.due_date < as_of_date,
-            FeeInstallmentModel.status.in_(['pending', 'partial'])
+            FeeInstallmentModel.status.in_(['pending', 'partial', 'overdue'])
         ).all()
 
         overdue_count = len(overdue_installments)
