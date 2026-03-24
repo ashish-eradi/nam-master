@@ -138,9 +138,9 @@ class PDFReceiptService:
 
     @staticmethod
     def _apply_custom_template(pdf: canvas.Canvas, template_url: str, ctx: dict) -> float:
-        """Draw a custom uploaded template image/PDF as the page background header.
-        Returns the y position after the template image."""
-        import re
+        """Draw a custom uploaded template as a full-page background.
+        Data is then overlaid on top so it fills the template's boxes.
+        Returns the y position for content to start (near top, with margin)."""
         # Convert URL path to filesystem path
         fs_path = "/app" + template_url
         if not os.path.exists(fs_path):
@@ -150,25 +150,27 @@ class PDFReceiptService:
         W, H, margin = ctx['width'], ctx['height'], ctx['margin']
 
         if ext in ('.png', '.jpg', '.jpeg'):
-            # Draw the image spanning full page width at the top
             from reportlab.lib.utils import ImageReader
             try:
-                img = ImageReader(fs_path)
-                iw, ih = img.getSize()
-                # Scale to page width
-                scale = W / iw
-                rendered_height = min(ih * scale, H * 0.35)  # Max 35% of page height
-                pdf.drawImage(fs_path, 0, H - rendered_height, width=W, height=rendered_height,
-                              preserveAspectRatio=True)
-                return H - rendered_height - margin * 0.3
+                # Draw as full-page background so data overlays template boxes
+                pdf.drawImage(fs_path, 0, 0, width=W, height=H,
+                              preserveAspectRatio=False)
+                # Content starts from top with normal margin
+                return H - margin
             except Exception:
                 return H - margin
         elif ext == '.pdf':
-            # Use first page of PDF as background
             try:
-                from reportlab.pdfgen import canvas as _canvas
-                # Draw PDF page background using pdfrw or just place as image
-                # Fallback: just return top margin if PDF rendering not supported
+                from pdfrw import PdfReader
+                from pdfrw.buildxobj import pagexobj
+                from pdfrw.toreportlab import makerl
+                template_pdf = PdfReader(fs_path)
+                if template_pdf.pages:
+                    xobj = pagexobj(template_pdf.pages[0])
+                    pdf.saveState()
+                    pdf.transform(W / float(xobj.BBox[2]), 0, 0, H / float(xobj.BBox[3]), 0, 0)
+                    pdf.doForm(makerl(pdf, xobj))
+                    pdf.restoreState()
                 return H - margin
             except Exception:
                 return H - margin
