@@ -1694,3 +1694,31 @@ def remove_print_template(
     flag_modified(school, 'settings')
     db.commit()
     return {"detail": "Template removed"}
+
+
+@router.get("/print-settings/template-preview/{doc_type}", dependencies=[Depends(is_admin)])
+def get_template_preview(
+    doc_type: str,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Serve the stored template image from DB base64 (works even after container restart)."""
+    import base64
+    from fastapi.responses import Response
+    from app.models.school import School as SchoolModel
+    if doc_type not in ("receipt", "fee_due"):
+        raise HTTPException(status_code=400, detail="Invalid doc_type")
+    school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    settings = (school.settings or {}).get('print', {}).get(doc_type, {})
+    b64 = settings.get('custom_template_data')
+    if not b64:
+        raise HTTPException(status_code=404, detail="No template uploaded")
+    ext = settings.get('custom_template_ext', '.png').lower().lstrip('.')
+    media_type = 'image/jpeg' if ext in ('jpg', 'jpeg') else f'image/{ext}' if ext == 'png' else 'application/pdf'
+    try:
+        data = base64.b64decode(b64)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to decode template")
+    return Response(content=data, media_type=media_type)

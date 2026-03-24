@@ -133,7 +133,30 @@ const TemplateFieldMapper: React.FC<{
 }> = ({ docType, templateUrl, positions, onChange, showLabels, onShowLabelsChange }) => {
   const fields = docType === 'receipt' ? RECEIPT_FIELDS : FEE_DUE_FIELDS;
   const [activeField, setActiveField] = useState<string | null>(null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
+
+  // Fetch template from backend (reads from DB base64, works after container restart)
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    setPreviewError(false);
+    fetch(`${getApiBaseUrl()}/finance-extended/print-settings/template-preview/${docType}`, {
+      credentials: 'include',
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('not found');
+        return res.blob();
+      })
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewSrc(objectUrl);
+      })
+      .catch(() => setPreviewError(true));
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [docType, templateUrl]);
 
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!activeField || !imgRef.current) return;
@@ -150,7 +173,6 @@ const TemplateFieldMapper: React.FC<{
     onChange(next);
   };
 
-  const imgSrc = `${getApiBaseUrl().replace('/api/v1', '')}${templateUrl}`;
   const placedCount = Object.keys(positions).length;
 
   return (
@@ -178,13 +200,23 @@ const TemplateFieldMapper: React.FC<{
             userSelect: 'none',
           }}
         >
-          <img
-            ref={imgRef}
-            src={imgSrc}
-            alt="template"
-            draggable={false}
-            style={{ width: '100%', display: 'block', pointerEvents: 'none' }}
-          />
+          {previewSrc ? (
+            <img
+              ref={imgRef}
+              src={previewSrc}
+              alt="template"
+              draggable={false}
+              style={{ width: '100%', display: 'block', pointerEvents: 'none' }}
+            />
+          ) : previewError ? (
+            <div style={{ padding: 32, textAlign: 'center', color: '#888', fontSize: 13 }}>
+              Preview unavailable — please re-upload the template to see it here
+            </div>
+          ) : (
+            <div style={{ padding: 32, textAlign: 'center', color: '#888', fontSize: 13 }}>
+              Loading preview…
+            </div>
+          )}
 
           {/* Active placement hint */}
           {activeField && (
