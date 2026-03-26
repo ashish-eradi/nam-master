@@ -1080,23 +1080,26 @@ def download_student_annual_report(
         except Exception:
             pass
 
-    pdf_buffer = ReportCardService.generate_annual_report(
-        student_name=data["student_name"],
-        admission_number=data["admission_number"],
-        class_name=data["class_name"],
-        section=data.get("section"),
-        father_name=data.get("father_name"),
-        date_of_birth=dob,
-        roll_number=data.get("roll_number"),
-        academic_year=academic_year,
-        exams_data=data["exams"],
-        monthly_attendance=data["monthly_attendance"],
-        annual_working_days=data["annual_working_days"],
-        annual_present_days=data["annual_present_days"],
-        annual_attendance_percentage=data["annual_attendance_percentage"],
-        school_name=school_name,
-        print_settings=rc_print_settings,
-    )
+    try:
+        pdf_buffer = ReportCardService.generate_annual_report(
+            student_name=data["student_name"],
+            admission_number=data["admission_number"],
+            class_name=data["class_name"],
+            section=data.get("section"),
+            father_name=data.get("father_name"),
+            date_of_birth=dob,
+            roll_number=data.get("roll_number"),
+            academic_year=academic_year,
+            exams_data=data["exams"],
+            monthly_attendance=data["monthly_attendance"],
+            annual_working_days=data["annual_working_days"],
+            annual_present_days=data["annual_present_days"],
+            annual_attendance_percentage=data["annual_attendance_percentage"],
+            school_name=school_name,
+            print_settings=rc_print_settings,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
     return _SR(
         pdf_buffer,
         media_type="application/pdf",
@@ -1135,6 +1138,8 @@ def download_class_annual_reports(
     section = getattr(class_obj, "section", None)
 
     merger = PdfMerger()
+    generated_count = 0
+    last_error = None
     for student in students:
         try:
             data = get_student_annual_report(student.id, academic_year, db, school_id)
@@ -1163,11 +1168,18 @@ def download_class_annual_reports(
                 print_settings=rc_print_settings,
             )
             merger.append(buf)
-        except Exception:
+            generated_count += 1
+        except Exception as e:
+            last_error = str(e)
             continue
+
+    if generated_count == 0:
+        detail = f"No annual reports could be generated. Last error: {last_error}" if last_error else "No annual reports could be generated"
+        raise HTTPException(status_code=500, detail=detail)
 
     merged_buffer = BytesIO()
     merger.write(merged_buffer)
+    merger.close()
     merged_buffer.seek(0)
     return _SR(
         merged_buffer,
