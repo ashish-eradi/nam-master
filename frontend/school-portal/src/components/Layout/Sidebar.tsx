@@ -138,6 +138,10 @@ const Sidebar: React.FC = () => {
           key: '18',
           label: <Link to="/financial-reports">Financial Reports</Link>,
         },
+        {
+          key: '23',
+          label: <Link to="/daily-expenditure">Daily Expenditure</Link>,
+        },
       ],
     },
     {

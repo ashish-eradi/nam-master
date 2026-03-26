@@ -11,6 +11,7 @@ import Subjects from './pages/Subjects';
 import ClassesPage from './pages/ClassesPage';
 import Attendance from './pages/Attendance';
 import Finance from './pages/Finance';
+import DailyExpenditurePage from './pages/DailyExpenditurePage';
 import FeeCollection from './pages/FeeCollection';
 import FinancialReports from './pages/FinancialReports';
 import Library from './pages/Library';
@@ -45,6 +46,7 @@ function App() {
             <Route path="classes" element={<ClassesPage />} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="accounts" element={<Finance />} />
+            <Route path="daily-expenditure" element={<DailyExpenditurePage />} />
             <Route path="fee-collection" element={<FeeCollection />} />
             <Route path="financial-reports" element={<FinancialReports />} />
             <Route path="library" element={<Library />} />

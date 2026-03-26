@@ -1598,9 +1598,6 @@ const Finance: React.FC = () => {
         <TabPane tab="Miscellaneous Fees" key="10">
           <MiscellaneousFeesPage />
         </TabPane>
-        <TabPane tab="Daily Expenditure" key="11">
-          <DailyExpenditure />
-        </TabPane>
       </Tabs>
     </div>
   );
