@@ -533,6 +533,7 @@ def get_student_ledger(
     all_fee_structures = [{
         "id": str(fs.id),
         "fee_name": fs.class_fee.fee.fee_name if fs.class_fee and fs.class_fee.fee else "Unknown",
+        "academic_year": fs.academic_year,
         "total_amount": float(fs.total_amount),
         "discount_amount": float(fs.discount_amount),
         "final_amount": float(fs.final_amount),
@@ -546,6 +547,7 @@ def get_student_ledger(
         all_fee_structures.append({
             "id": str(tfs.id),
             "fee_name": f"Transport Fee - {route_name}",
+            "academic_year": tfs.academic_year,
             "total_amount": float(tfs.total_amount),
             "discount_amount": float(tfs.discount_amount),
             "final_amount": float(tfs.final_amount),
@@ -559,6 +561,7 @@ def get_student_ledger(
         all_fee_structures.append({
             "id": str(hfs.id),
             "fee_name": f"Hostel Fee - {hostel_name}",
+            "academic_year": hfs.academic_year,
             "total_amount": float(hfs.total_amount),
             "discount_amount": float(hfs.discount_amount),
             "final_amount": float(hfs.final_amount),
@@ -572,6 +575,7 @@ def get_student_ledger(
         all_fee_structures.append({
             "id": str(mfs.id),
             "fee_name": f"Misc Fee - {category_name}",
+            "academic_year": getattr(mfs, 'academic_year', None),
             "total_amount": float(mfs.total_amount),
             "discount_amount": float(mfs.discount_amount),
             "final_amount": float(mfs.final_amount),
@@ -704,6 +708,7 @@ def get_student_outstanding(
         "fee_id": str(fs.class_fee.fee_id) if fs.class_fee and fs.class_fee.fee_id else None,
         "fee_structure_id": str(fs.id),
         "fee_name": fs.class_fee.fee.fee_name if fs.class_fee and fs.class_fee.fee else "Unknown",
+        "academic_year": fs.academic_year,
         "outstanding": float(fs.outstanding_amount)
     } for fs in fee_structures]
 
@@ -714,6 +719,7 @@ def get_student_outstanding(
             "fee_id": None,
             "fee_structure_id": str(tfs.id),
             "fee_name": f"Transport Fee - {route_name}",
+            "academic_year": tfs.academic_year,
             "outstanding": float(tfs.outstanding_amount)
         })
 
@@ -724,6 +730,7 @@ def get_student_outstanding(
             "fee_id": None,
             "fee_structure_id": str(hfs.id),
             "fee_name": f"Hostel Fee - {hostel_name}",
+            "academic_year": hfs.academic_year,
             "outstanding": float(hfs.outstanding_amount)
         })
 
@@ -734,6 +741,7 @@ def get_student_outstanding(
             "fee_id": None,
             "fee_structure_id": str(mfs.id),
             "fee_name": f"Misc Fee - {category_name}",
+            "academic_year": getattr(mfs, 'academic_year', None),
             "outstanding": float(mfs.outstanding_amount)
         })
 
@@ -898,6 +906,7 @@ def download_payment_receipt(
         selectinload(PaymentModel.student).selectinload(StudentModel.class_),
         selectinload(PaymentModel.fund),
         selectinload(PaymentModel.payment_details).selectinload(PaymentDetailModel.fee),
+        selectinload(PaymentModel.payment_details).selectinload(PaymentDetailModel.student_fee_structure),
         selectinload(PaymentModel.received_by),
         selectinload(PaymentModel.school)
     ).first()

@@ -383,6 +383,12 @@ const FeeCollection: React.FC = () => {
 
   const ledgerColumns = [
     {
+      title: 'Academic Year',
+      dataIndex: 'academic_year',
+      key: 'academic_year',
+      render: (y: string) => y ? <Tag color="blue">{y}</Tag> : '-',
+    },
+    {
       title: 'Fee',
       dataIndex: 'fee_name',
       key: 'fee_name',
@@ -853,8 +859,13 @@ const FeeCollection: React.FC = () => {
                 <div>
                   <div style={{ fontWeight: 'bold', marginBottom: 8 }}>By Fee:</div>
                   {outstandingData.by_fee.map((fee: any, idx: number) => (
-                    <div key={fee.fee_structure_id || fee.fee_id || idx} style={{ marginBottom: 8 }}>
-                      <div>{fee.fee_name}</div>
+                    <div key={fee.fee_structure_id || fee.fee_id || idx} style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{fee.fee_name}</span>
+                        {fee.academic_year && (
+                          <Tag color="blue" style={{ fontSize: 11, padding: '0 4px', lineHeight: '18px' }}>{fee.academic_year}</Tag>
+                        )}
+                      </div>
                       <div style={{ color: '#f5222d', fontSize: '16px' }}>
                         ₹{fee.outstanding.toFixed(2)}
                       </div>
@@ -929,7 +940,12 @@ const FeeCollection: React.FC = () => {
           {outstandingData?.by_fee.map((fee: any, index: number) => (
             <Row key={fee.fee_structure_id || fee.fee_id || index} gutter={16} style={{ marginBottom: 8 }} align="middle">
               <Col span={12}>
-                <div>{fee.fee_name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span>{fee.fee_name}</span>
+                  {fee.academic_year && (
+                    <Tag color="blue" style={{ fontSize: 11, padding: '0 4px' }}>{fee.academic_year}</Tag>
+                  )}
+                </div>
                 <div style={{ fontSize: '12px', color: '#999' }}>
                   Outstanding: ₹{fee.outstanding.toFixed(2)}
                 </div>

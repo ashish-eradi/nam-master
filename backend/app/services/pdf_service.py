@@ -358,9 +358,11 @@ class PDFReceiptService:
                 table_w = min(W - fx - margin, W * 0.55)
                 for detail in payment.payment_details:
                     fee_name = detail.fee.fee_name if detail.fee else 'Fee'
+                    acad_yr = detail.student_fee_structure.academic_year if detail.student_fee_structure else None
+                    display_name = f"{fee_name} ({acad_yr})" if acad_yr else fee_name
                     amount = Decimal(str(detail.amount))
                     pdf.setFont(_FNT_N, _fs(9, ctx))
-                    pdf.drawString(fx, fy, fee_name)
+                    pdf.drawString(fx, fy, display_name)
                     pdf.drawRightString(fx + table_w, fy, f"{_RUPEE}{amount:,.2f}")
                     fy -= line_h
             return  # field positions handled — done
@@ -423,13 +425,15 @@ class PDFReceiptService:
         total = Decimal('0')
         for detail in payment.payment_details:
             fee_name = detail.fee.fee_name if detail.fee else "Fee"
+            acad_yr = detail.student_fee_structure.academic_year if detail.student_fee_structure else None
+            display_name = f"{fee_name} ({acad_yr})" if acad_yr else fee_name
             amount   = Decimal(str(detail.amount))
             total   += amount
             pdf.setFont(_FNT_N, _fs(9, ctx))
             if show_labels:
-                pdf.drawString(margin + _sp(0.15 * inch, ctx), y, f"\u2022  {fee_name}")
+                pdf.drawString(margin + _sp(0.15 * inch, ctx), y, f"\u2022  {display_name}")
             else:
-                pdf.drawString(margin, y, fee_name)
+                pdf.drawString(margin, y, display_name)
             pdf.drawRightString(W - margin, y, f"{_RUPEE}{amount:,.2f}")
             y -= line_gap * 0.9
 
@@ -625,9 +629,11 @@ class PDFReceiptService:
         total = Decimal('0')
         for i, detail in enumerate(payment.payment_details, 1):
             fee_name = detail.fee.fee_name if detail.fee else "Fee"
+            acad_yr = detail.student_fee_structure.academic_year if detail.student_fee_structure else None
+            display_name = f"{fee_name} ({acad_yr})" if acad_yr else fee_name
             amount = Decimal(str(detail.amount))
             total += amount
-            data.append([str(i), fee_name, f"{amount:,.2f}"])
+            data.append([str(i), display_name, f"{amount:,.2f}"])
         data.append(["", "Total", f"{total:,.2f}"])
 
         usable = W - 2 * margin

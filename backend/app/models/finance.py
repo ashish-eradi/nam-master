@@ -110,6 +110,7 @@ class PaymentDetail(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     payment = relationship("Payment", back_populates="payment_details")
     fee = relationship("Fee")
+    student_fee_structure = relationship("StudentFeeStructure", foreign_keys=[student_fee_structure_id])
 
 class Concession(Base):
     __tablename__ = "concessions"
