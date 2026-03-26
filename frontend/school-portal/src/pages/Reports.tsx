@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { getCurrentAcademicYear } from '../utils/academicYear';
-import { Card, Row, Col, Button, Select, DatePicker, Space, Tabs, Table, Statistic, Progress, message, Spin } from 'antd';
+import { getCurrentAcademicYear, getAcademicYearOptions } from '../utils/academicYear';
+import { Card, Row, Col, Button, Select, DatePicker, Space, Tabs, Table, Statistic, Progress, message, Spin, Tag } from 'antd';
 import {
   DownloadOutlined,
   FileTextOutlined,
@@ -9,6 +9,7 @@ import {
   CheckCircleOutlined,
   BarChartOutlined,
   PieChartOutlined,
+  FilePdfOutlined,
 } from '@ant-design/icons';
 import { useGetClassesQuery } from '../services/classApi';
 import { useGetStudentsQuery } from '../services/studentsApi';
@@ -16,6 +17,8 @@ import {
   useGetDailyAttendanceOverviewQuery,
   useGetMonthlyAttendanceOverviewQuery,
 } from '../services/attendanceApi';
+import { useGetExamSeriesQuery, useLazyDownloadReportCardQuery, useLazyDownloadClassReportCardsQuery } from '../services/examApi';
+import { useLazyDownloadStudentAnnualReportQuery, useLazyDownloadClassAnnualReportsQuery } from '../services/reportsApi';
 import moment from 'moment';
 import type { Moment } from 'moment';
 
@@ -29,6 +32,346 @@ const getApiBaseUrl = () => {
   }
   return (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/api/v1';
 };
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const triggerBlobDownload = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+// ── Report Cards Tab ──────────────────────────────────────────────────────────
+
+const ReportCardsTab: React.FC = () => {
+  const [selectedAcYear, setSelectedAcYear] = useState(getCurrentAcademicYear());
+  const [selectedClass, setSelectedClass] = useState<string | undefined>();
+  const [selectedExamSeries, setSelectedExamSeries] = useState<string | undefined>();
+  const [selectedStudent, setSelectedStudent] = useState<string | undefined>();
+
+  const { data: classes } = useGetClassesQuery();
+  const { data: examSeriesList } = useGetExamSeriesQuery({ academic_year: selectedAcYear });
+  const { data: students } = useGetStudentsQuery();
+
+  const [triggerDownloadSingle] = useLazyDownloadReportCardQuery();
+  const [triggerDownloadClass] = useLazyDownloadClassReportCardsQuery();
+
+  const classStudents = students?.filter((s: any) => s.class_id === selectedClass) || [];
+
+  const handleDownloadSingle = async () => {
+    if (!selectedExamSeries || !selectedStudent) {
+      message.warning('Please select an exam series and student');
+      return;
+    }
+    const key = 'dl';
+    message.loading({ content: 'Generating report card...', key });
+    try {
+      const blob = await triggerDownloadSingle({
+        student_id: selectedStudent,
+        exam_series_id: selectedExamSeries,
+      }).unwrap();
+      const student = students?.find((s: any) => s.id === selectedStudent);
+      triggerBlobDownload(blob, `report_card_${student?.admission_number || selectedStudent}.pdf`);
+      message.success({ content: 'Report card downloaded', key });
+    } catch {
+      message.error({ content: 'Failed to download report card', key });
+    }
+  };
+
+  const handleDownloadClass = async () => {
+    if (!selectedExamSeries || !selectedClass) {
+      message.warning('Please select an exam series and class');
+      return;
+    }
+    const key = 'dlc';
+    message.loading({ content: 'Generating report cards for class...', key });
+    try {
+      const blob = await triggerDownloadClass({
+        exam_series_id: selectedExamSeries,
+        class_id: selectedClass,
+      }).unwrap();
+      const cls = classes?.find((c: any) => c.id === selectedClass);
+      triggerBlobDownload(blob, `report_cards_${cls?.name || 'class'}.pdf`);
+      message.success({ content: 'Class report cards downloaded', key });
+    } catch {
+      message.error({ content: 'Failed to download class report cards', key });
+    }
+  };
+
+  return (
+    <div>
+      <Card style={{ marginBottom: 16 }}>
+        <Row gutter={16} align="bottom">
+          <Col xs={24} sm={6}>
+            <div style={{ marginBottom: 4 }}><strong>Academic Year</strong></div>
+            <Select value={selectedAcYear} onChange={setSelectedAcYear} style={{ width: '100%' }}>
+              {getAcademicYearOptions().map((y: string) => <Option key={y} value={y}>{y}</Option>)}
+            </Select>
+          </Col>
+          <Col xs={24} sm={6}>
+            <div style={{ marginBottom: 4 }}><strong>Exam Series</strong></div>
+            <Select
+              placeholder="Select exam series"
+              style={{ width: '100%' }}
+              value={selectedExamSeries}
+              onChange={setSelectedExamSeries}
+              allowClear
+            >
+              {examSeriesList?.map((es: any) => (
+                <Option key={es.id} value={es.id}>{es.name} <Tag>{es.exam_type}</Tag></Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={24} sm={6}>
+            <div style={{ marginBottom: 4 }}><strong>Class</strong></div>
+            <Select
+              placeholder="Select class"
+              style={{ width: '100%' }}
+              value={selectedClass}
+              onChange={(v) => { setSelectedClass(v); setSelectedStudent(undefined); }}
+              allowClear
+            >
+              {classes?.map((c: any) => (
+                <Option key={c.id} value={c.id}>{c.name}{c.section ? ` - ${c.section}` : ''}</Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={24} sm={6}>
+            <div style={{ marginBottom: 4 }}><strong>Student (for single download)</strong></div>
+            <Select
+              placeholder="Select student"
+              style={{ width: '100%' }}
+              value={selectedStudent}
+              onChange={setSelectedStudent}
+              allowClear
+              showSearch
+              optionFilterProp="children"
+            >
+              {classStudents.map((s: any) => (
+                <Option key={s.id} value={s.id}>
+                  {s.first_name} {s.last_name} ({s.admission_number})
+                </Option>
+              ))}
+            </Select>
+          </Col>
+        </Row>
+      </Card>
+
+      <Card title="Download Report Cards">
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Card
+              style={{ background: '#e6f7ff', border: '1px solid #91d5ff', textAlign: 'center' }}
+            >
+              <FilePdfOutlined style={{ fontSize: 36, color: '#1890ff' }} />
+              <h3 style={{ marginTop: 12 }}>Single Student Report Card</h3>
+              <p style={{ color: '#666' }}>Download report card for a specific student</p>
+              <p style={{ color: '#888', fontSize: 12 }}>
+                Select exam series + class + student above
+              </p>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                onClick={handleDownloadSingle}
+                disabled={!selectedExamSeries || !selectedStudent}
+              >
+                Download PDF
+              </Button>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Card
+              style={{ background: '#f6ffed', border: '1px solid #b7eb8f', textAlign: 'center' }}
+            >
+              <TeamOutlined style={{ fontSize: 36, color: '#52c41a' }} />
+              <h3 style={{ marginTop: 12 }}>Bulk Class Report Cards</h3>
+              <p style={{ color: '#666' }}>Download report cards for all students in a class</p>
+              <p style={{ color: '#888', fontSize: 12 }}>
+                Select exam series + class above
+              </p>
+              <Button
+                type="primary"
+                style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                icon={<DownloadOutlined />}
+                onClick={handleDownloadClass}
+                disabled={!selectedExamSeries || !selectedClass}
+              >
+                Download All (PDF)
+              </Button>
+            </Card>
+          </Col>
+        </Row>
+
+        <div style={{ marginTop: 24, padding: 16, background: '#fffbe6', borderRadius: 6, border: '1px solid #ffe58f' }}>
+          <strong>Report card includes:</strong>
+          <span style={{ color: '#666', marginLeft: 8 }}>
+            Student name · Father name · Class/Section · Date of birth · Admission no · Roll no · Exam marks per subject · Grade · Overall percentage · Attendance (working days / present days / %)
+          </span>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+// ── Annual Report Tab ─────────────────────────────────────────────────────────
+
+const AnnualReportTab: React.FC = () => {
+  const [selectedAcYear, setSelectedAcYear] = useState(getCurrentAcademicYear());
+  const [selectedClass, setSelectedClass] = useState<string | undefined>();
+  const [selectedStudent, setSelectedStudent] = useState<string | undefined>();
+
+  const { data: classes } = useGetClassesQuery();
+  const { data: students } = useGetStudentsQuery();
+
+  const [triggerDownloadStudent] = useLazyDownloadStudentAnnualReportQuery();
+  const [triggerDownloadClass] = useLazyDownloadClassAnnualReportsQuery();
+
+  const classStudents = students?.filter((s: any) => s.class_id === selectedClass) || [];
+
+  const handleDownloadStudent = async () => {
+    if (!selectedStudent) {
+      message.warning('Please select a student');
+      return;
+    }
+    const key = 'dla';
+    message.loading({ content: 'Generating annual report...', key });
+    try {
+      const blob = await triggerDownloadStudent({
+        student_id: selectedStudent,
+        academic_year: selectedAcYear,
+      }).unwrap();
+      const student = students?.find((s: any) => s.id === selectedStudent);
+      triggerBlobDownload(blob, `annual_report_${student?.admission_number || selectedStudent}_${selectedAcYear}.pdf`);
+      message.success({ content: 'Annual report downloaded', key });
+    } catch {
+      message.error({ content: 'Failed to download annual report', key });
+    }
+  };
+
+  const handleDownloadClass = async () => {
+    if (!selectedClass) {
+      message.warning('Please select a class');
+      return;
+    }
+    const key = 'dlac';
+    message.loading({ content: 'Generating annual reports for class...', key });
+    try {
+      const blob = await triggerDownloadClass({
+        class_id: selectedClass,
+        academic_year: selectedAcYear,
+      }).unwrap();
+      const cls = classes?.find((c: any) => c.id === selectedClass);
+      triggerBlobDownload(blob, `annual_reports_${cls?.name || 'class'}_${selectedAcYear}.pdf`);
+      message.success({ content: 'Class annual reports downloaded', key });
+    } catch {
+      message.error({ content: 'Failed to download class annual reports', key });
+    }
+  };
+
+  return (
+    <div>
+      <Card style={{ marginBottom: 16 }}>
+        <Row gutter={16} align="bottom">
+          <Col xs={24} sm={6}>
+            <div style={{ marginBottom: 4 }}><strong>Academic Year</strong></div>
+            <Select value={selectedAcYear} onChange={setSelectedAcYear} style={{ width: '100%' }}>
+              {getAcademicYearOptions().map((y: string) => <Option key={y} value={y}>{y}</Option>)}
+            </Select>
+          </Col>
+          <Col xs={24} sm={6}>
+            <div style={{ marginBottom: 4 }}><strong>Class</strong></div>
+            <Select
+              placeholder="Select class"
+              style={{ width: '100%' }}
+              value={selectedClass}
+              onChange={(v) => { setSelectedClass(v); setSelectedStudent(undefined); }}
+              allowClear
+            >
+              {classes?.map((c: any) => (
+                <Option key={c.id} value={c.id}>{c.name}{c.section ? ` - ${c.section}` : ''}</Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={24} sm={6}>
+            <div style={{ marginBottom: 4 }}><strong>Student (for single download)</strong></div>
+            <Select
+              placeholder="Select student"
+              style={{ width: '100%' }}
+              value={selectedStudent}
+              onChange={setSelectedStudent}
+              allowClear
+              showSearch
+              optionFilterProp="children"
+            >
+              {classStudents.map((s: any) => (
+                <Option key={s.id} value={s.id}>
+                  {s.first_name} {s.last_name} ({s.admission_number})
+                </Option>
+              ))}
+            </Select>
+          </Col>
+        </Row>
+      </Card>
+
+      <Card title="Download Annual Reports">
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Card
+              style={{ background: '#f9f0ff', border: '1px solid #d3adf7', textAlign: 'center' }}
+            >
+              <FilePdfOutlined style={{ fontSize: 36, color: '#722ed1' }} />
+              <h3 style={{ marginTop: 12 }}>Single Student Annual Report</h3>
+              <p style={{ color: '#666' }}>Full-year report: all exams + monthly attendance</p>
+              <p style={{ color: '#888', fontSize: 12 }}>Select class + student above</p>
+              <Button
+                type="primary"
+                style={{ background: '#722ed1', borderColor: '#722ed1' }}
+                icon={<DownloadOutlined />}
+                onClick={handleDownloadStudent}
+                disabled={!selectedStudent}
+              >
+                Download PDF
+              </Button>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Card
+              style={{ background: '#fff0f6', border: '1px solid #ffadd2', textAlign: 'center' }}
+            >
+              <TeamOutlined style={{ fontSize: 36, color: '#eb2f96' }} />
+              <h3 style={{ marginTop: 12 }}>Bulk Class Annual Reports</h3>
+              <p style={{ color: '#666' }}>Annual reports for all students in a class</p>
+              <p style={{ color: '#888', fontSize: 12 }}>Select class above</p>
+              <Button
+                type="primary"
+                style={{ background: '#eb2f96', borderColor: '#eb2f96' }}
+                icon={<DownloadOutlined />}
+                onClick={handleDownloadClass}
+                disabled={!selectedClass}
+              >
+                Download All (PDF)
+              </Button>
+            </Card>
+          </Col>
+        </Row>
+
+        <div style={{ marginTop: 24, padding: 16, background: '#f9f0ff', borderRadius: 6, border: '1px solid #d3adf7' }}>
+          <strong>Annual report includes:</strong>
+          <span style={{ color: '#666', marginLeft: 8 }}>
+            Student details · All exams for the academic year (marks, %, grade) · Month-by-month attendance (working days / present / %) · Annual totals
+          </span>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+// ── Main Reports Page ─────────────────────────────────────────────────────────
 
 const Reports: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<string | undefined>(undefined);
@@ -236,6 +579,14 @@ const Reports: React.FC = () => {
               </Row>
             </Space>
           </Card>
+        </TabPane>
+
+        <TabPane tab="Report Cards" key="report-cards">
+          <ReportCardsTab />
+        </TabPane>
+
+        <TabPane tab="Annual Report" key="annual-report">
+          <AnnualReportTab />
         </TabPane>
 
         <TabPane tab="Attendance Analytics" key="attendance">

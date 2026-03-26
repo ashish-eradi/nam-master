@@ -1098,6 +1098,36 @@ def download_report_card(
     if p_rel and p_rel.parent:
         father_name = p_rel.parent.father_name
 
+    # Calculate attendance for the academic year
+    from app.models.attendance import Attendance as AttendanceModel
+    from sqlalchemy import func as _func
+    working_days = None
+    present_days = None
+    attendance_pct = None
+    try:
+        acad_year = exam_series.academic_year  # e.g. "2024-25"
+        start_yr = int(acad_year.split("-")[0])
+        acad_start = date(start_yr, 4, 1)
+        acad_end = date(start_yr + 1, 3, 31)
+        # Working days = distinct dates with any attendance record for the class
+        wd_q = db.query(_func.count(_func.distinct(AttendanceModel.date))).filter(
+            AttendanceModel.class_id == student.class_id,
+            AttendanceModel.date >= acad_start,
+            AttendanceModel.date <= acad_end
+        ).scalar()
+        # Present days = dates student was P, L, or HL
+        pd_q = db.query(_func.count(AttendanceModel.id)).filter(
+            AttendanceModel.student_id == student_id,
+            AttendanceModel.date >= acad_start,
+            AttendanceModel.date <= acad_end,
+            AttendanceModel.status.in_(["P", "L", "HL"])
+        ).scalar()
+        working_days = wd_q or 0
+        present_days = pd_q or 0
+        attendance_pct = (present_days / working_days * 100) if working_days > 0 else None
+    except Exception:
+        pass
+
     # Get school info
     school = db.query(SchoolModel).filter(SchoolModel.id == ensure_uuid(school_id)).first()
     school_name = school.name if school else "School"
@@ -1107,7 +1137,11 @@ def download_report_card(
         student_name=f"{student.first_name} {student.last_name}",
         admission_number=student.admission_number,
         class_name=student.class_.name,
+        section=getattr(student.class_, 'section', None),
         father_name=father_name,
+        date_of_birth=student.date_of_birth,
+        roll_number=student.roll_number,
+        hall_ticket_number=None,
         exam_series_name=exam_series.name,
         exam_type=exam_series.exam_type,
         academic_year=exam_series.academic_year,
@@ -1116,10 +1150,12 @@ def download_report_card(
         total_max_marks=total_max_marks,
         percentage=percentage,
         overall_grade=overall_grade,
-        attendance_percentage=None,  # Can be added from attendance module
-        teacher_remarks=None,  # Can be added from remarks field
+        working_days=working_days,
+        present_days=present_days,
+        attendance_percentage=attendance_pct,
+        teacher_remarks=None,
         school_name=school_name,
-        school_logo_path=None  # Can be configured later
+        school_logo_path=None
     )
 
     return StreamingResponse(
@@ -1198,7 +1234,38 @@ def download_class_report_cards(
     school = db.query(SchoolModel).filter(SchoolModel.id == ensure_uuid(school_id)).first()
     school_name = school.name if school else "School"
 
-    class_name = students[0].class_.name if students else "class"
+    class_obj = students[0].class_ if students else None
+    class_name = class_obj.name if class_obj else "class"
+    section = getattr(class_obj, 'section', None)
+
+    # Pre-calculate attendance for the academic year for all students
+    from app.models.attendance import Attendance as AttendanceModel
+    from sqlalchemy import func as _func
+    try:
+        acad_year = exam_series.academic_year
+        start_yr = int(acad_year.split("-")[0])
+        acad_start = date(start_yr, 4, 1)
+        acad_end = date(start_yr + 1, 3, 31)
+        working_days_count = db.query(_func.count(_func.distinct(AttendanceModel.date))).filter(
+            AttendanceModel.class_id == class_id,
+            AttendanceModel.date >= acad_start,
+            AttendanceModel.date <= acad_end
+        ).scalar() or 0
+        # Get present days per student
+        from sqlalchemy import case as _case
+        student_attendance = db.query(
+            AttendanceModel.student_id,
+            _func.count(AttendanceModel.id).label("present_count")
+        ).filter(
+            AttendanceModel.student_id.in_(student_ids),
+            AttendanceModel.date >= acad_start,
+            AttendanceModel.date <= acad_end,
+            AttendanceModel.status.in_(["P", "L", "HL"])
+        ).group_by(AttendanceModel.student_id).all()
+        present_by_student = {str(r.student_id): r.present_count for r in student_attendance}
+    except Exception:
+        working_days_count = 0
+        present_by_student = {}
 
     # Merge PDFs for all students
     merger = PdfMerger()
@@ -1250,11 +1317,18 @@ def download_class_report_cards(
         else:
             overall_grade = "F"
 
+        present_days = present_by_student.get(str(student.id), 0)
+        att_pct = (present_days / working_days_count * 100) if working_days_count > 0 else None
+
         pdf_buffer = ReportCardService.generate_report_card(
             student_name=f"{student.first_name} {student.last_name}",
             admission_number=student.admission_number,
             class_name=class_name,
+            section=section,
             father_name=father_names.get(str(student.id)),
+            date_of_birth=student.date_of_birth,
+            roll_number=student.roll_number,
+            hall_ticket_number=None,
             exam_series_name=exam_series.name,
             exam_type=exam_series.exam_type,
             academic_year=exam_series.academic_year,
@@ -1263,7 +1337,9 @@ def download_class_report_cards(
             total_max_marks=total_max_marks,
             percentage=percentage,
             overall_grade=overall_grade,
-            attendance_percentage=None,
+            working_days=working_days_count,
+            present_days=present_days,
+            attendance_percentage=att_pct,
             teacher_remarks=None,
             school_name=school_name,
             school_logo_path=None

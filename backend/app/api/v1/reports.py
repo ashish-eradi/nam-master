@@ -893,3 +893,280 @@ def get_daily_expenditure(
         by_mode=by_mode,
         by_category=by_category
     )
+
+
+# ===== Annual Report =====
+
+def _calc_grade(pct: float) -> str:
+    if pct >= 90: return "A+"
+    if pct >= 80: return "A"
+    if pct >= 70: return "B+"
+    if pct >= 60: return "B"
+    if pct >= 50: return "C"
+    if pct >= 40: return "D"
+    return "F"
+
+
+@router.get("/annual-report/student/{student_id}", dependencies=[Depends(is_admin)])
+def get_student_annual_report(
+    student_id: uuid.UUID,
+    academic_year: str = Query(...),
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Get annual report data for a student (all exams + full-year attendance)."""
+    from app.models.exam_series import (
+        ExamSeries as ExamSeriesModel,
+        ExamTimetable as ExamTimetableModel,
+        ExamScheduleItem as ExamScheduleItemModel,
+        StudentExamMarks as StudentExamMarksModel,
+    )
+    from app.models.parent import ParentStudentRelation as PSR, Parent as ParentModel
+    from sqlalchemy.orm import selectinload as _sl
+
+    student = tenant_aware_query(db, Student, school_id).options(
+        _sl(Student.class_)
+    ).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # Get all exam series for the academic year
+    exam_series_list = tenant_aware_query(db, ExamSeriesModel, school_id).filter(
+        ExamSeriesModel.academic_year == academic_year
+    ).order_by(ExamSeriesModel.start_date).all()
+
+    exams_data = []
+    for es in exam_series_list:
+        timetable = db.query(ExamTimetableModel).filter(
+            ExamTimetableModel.exam_series_id == es.id,
+            ExamTimetableModel.class_id == student.class_id
+        ).first()
+        if not timetable:
+            continue
+        schedule_items = db.query(ExamScheduleItemModel).options(
+            _sl(ExamScheduleItemModel.subject)
+        ).filter(ExamScheduleItemModel.exam_timetable_id == timetable.id).all()
+        if not schedule_items:
+            continue
+        marks = db.query(StudentExamMarksModel).filter(
+            StudentExamMarksModel.student_id == student_id,
+            StudentExamMarksModel.exam_schedule_item_id.in_([i.id for i in schedule_items])
+        ).all()
+        total_obtained = 0.0
+        total_max = 0.0
+        for item in schedule_items:
+            total_max += float(item.max_marks)
+            m = next((x for x in marks if x.exam_schedule_item_id == item.id), None)
+            if m and not m.is_absent and m.marks_obtained:
+                total_obtained += float(m.marks_obtained)
+        pct = (total_obtained / total_max * 100) if total_max > 0 else 0
+        exams_data.append({
+            "exam_name": es.name,
+            "exam_type": es.exam_type,
+            "total_obtained": round(total_obtained, 2),
+            "total_max": round(total_max, 2),
+            "percentage": round(pct, 2),
+            "overall_grade": _calc_grade(pct)
+        })
+
+    # Monthly attendance for the academic year
+    try:
+        start_yr = int(academic_year.split("-")[0])
+        acad_start = date(start_yr, 4, 1)
+        acad_end = date(start_yr + 1, 3, 31)
+    except Exception:
+        acad_start = date.today().replace(month=4, day=1)
+        acad_end = date.today()
+
+    att_records = db.query(Attendance).filter(
+        Attendance.student_id == student_id,
+        Attendance.date >= acad_start,
+        Attendance.date <= acad_end
+    ).all()
+
+    # Class working days per month
+    class_att = db.query(Attendance).filter(
+        Attendance.class_id == student.class_id,
+        Attendance.date >= acad_start,
+        Attendance.date <= acad_end
+    ).all()
+
+    from collections import defaultdict
+    working_by_month = defaultdict(set)
+    for r in class_att:
+        working_by_month[r.date.strftime("%Y-%m")].add(r.date)
+
+    present_by_month = defaultdict(int)
+    for r in att_records:
+        if r.status in ("P", "L", "HL"):
+            present_by_month[r.date.strftime("%Y-%m")] += 1
+
+    import calendar
+    monthly_attendance = []
+    cur = acad_start.replace(day=1)
+    while cur <= acad_end:
+        key = cur.strftime("%Y-%m")
+        wd = len(working_by_month.get(key, set()))
+        pd = present_by_month.get(key, 0)
+        pct = (pd / wd * 100) if wd > 0 else 0
+        if wd > 0:
+            monthly_attendance.append({
+                "month_name": cur.strftime("%B %Y"),
+                "working_days": wd,
+                "present_days": pd,
+                "percentage": round(pct, 1)
+            })
+        # Advance month
+        if cur.month == 12:
+            cur = cur.replace(year=cur.year + 1, month=1)
+        else:
+            cur = cur.replace(month=cur.month + 1)
+
+    annual_wd = sum(len(v) for v in working_by_month.values())
+    annual_pd = sum(present_by_month.values())
+    annual_pct = (annual_pd / annual_wd * 100) if annual_wd > 0 else 0
+
+    # Father name
+    father_name = None
+    p_rel = db.query(PSR).options(joinedload(PSR.parent)).filter(
+        PSR.student_id == student_id
+    ).first()
+    if p_rel and p_rel.parent:
+        father_name = p_rel.parent.father_name
+
+    return {
+        "student_id": str(student_id),
+        "student_name": f"{student.first_name} {student.last_name}",
+        "admission_number": student.admission_number,
+        "roll_number": student.roll_number,
+        "class_name": student.class_.name if student.class_ else "-",
+        "section": getattr(student.class_, "section", None),
+        "date_of_birth": str(student.date_of_birth) if student.date_of_birth else None,
+        "father_name": father_name,
+        "academic_year": academic_year,
+        "exams": exams_data,
+        "monthly_attendance": monthly_attendance,
+        "annual_working_days": annual_wd,
+        "annual_present_days": annual_pd,
+        "annual_attendance_percentage": round(annual_pct, 1),
+    }
+
+
+@router.get("/annual-report/student/{student_id}/download", dependencies=[Depends(is_admin)])
+def download_student_annual_report(
+    student_id: uuid.UUID,
+    academic_year: str = Query(...),
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Download annual report PDF for a student."""
+    from fastapi.responses import StreamingResponse as _SR
+    from app.models.school import School as SchoolModel
+    from app.services.report_card_service import ReportCardService
+
+    data = get_student_annual_report(student_id, academic_year, db, school_id)
+
+    school = db.query(SchoolModel).filter(
+        SchoolModel.id == uuid.UUID(school_id) if not isinstance(school_id, uuid.UUID) else school_id
+    ).first()
+    school_name = school.name if school else "School"
+
+    dob = None
+    if data.get("date_of_birth"):
+        try:
+            from datetime import date as _date
+            dob = _date.fromisoformat(data["date_of_birth"])
+        except Exception:
+            pass
+
+    pdf_buffer = ReportCardService.generate_annual_report(
+        student_name=data["student_name"],
+        admission_number=data["admission_number"],
+        class_name=data["class_name"],
+        section=data.get("section"),
+        father_name=data.get("father_name"),
+        date_of_birth=dob,
+        roll_number=data.get("roll_number"),
+        academic_year=academic_year,
+        exams_data=data["exams"],
+        monthly_attendance=data["monthly_attendance"],
+        annual_working_days=data["annual_working_days"],
+        annual_present_days=data["annual_present_days"],
+        annual_attendance_percentage=data["annual_attendance_percentage"],
+        school_name=school_name,
+    )
+    return _SR(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=annual_report_{data['admission_number']}_{academic_year}.pdf"}
+    )
+
+
+@router.get("/annual-report/class/{class_id}/download-all", dependencies=[Depends(is_admin)])
+def download_class_annual_reports(
+    class_id: uuid.UUID,
+    academic_year: str = Query(...),
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Download annual reports for all students in a class as merged PDF."""
+    from fastapi.responses import StreamingResponse as _SR
+    from app.models.school import School as SchoolModel
+    from app.services.report_card_service import ReportCardService
+    from app.models.student import Student as StudentModel
+    from sqlalchemy.orm import selectinload as _sl
+    from PyPDF2 import PdfMerger
+    from io import BytesIO
+
+    students = tenant_aware_query(db, StudentModel, school_id).options(
+        _sl(StudentModel.class_)
+    ).filter(StudentModel.class_id == class_id).order_by(StudentModel.admission_number).all()
+
+    if not students:
+        raise HTTPException(status_code=404, detail="No students found in this class")
+
+    school = db.query(SchoolModel).filter(SchoolModel.id == uuid.UUID(str(school_id))).first()
+    school_name = school.name if school else "School"
+    class_obj = students[0].class_ if students else None
+    class_name = class_obj.name if class_obj else "class"
+    section = getattr(class_obj, "section", None)
+
+    merger = PdfMerger()
+    for student in students:
+        try:
+            data = get_student_annual_report(student.id, academic_year, db, school_id)
+            dob = None
+            if data.get("date_of_birth"):
+                try:
+                    from datetime import date as _date
+                    dob = _date.fromisoformat(data["date_of_birth"])
+                except Exception:
+                    pass
+            buf = ReportCardService.generate_annual_report(
+                student_name=data["student_name"],
+                admission_number=data["admission_number"],
+                class_name=class_name,
+                section=section,
+                father_name=data.get("father_name"),
+                date_of_birth=dob,
+                roll_number=data.get("roll_number"),
+                academic_year=academic_year,
+                exams_data=data["exams"],
+                monthly_attendance=data["monthly_attendance"],
+                annual_working_days=data["annual_working_days"],
+                annual_present_days=data["annual_present_days"],
+                annual_attendance_percentage=data["annual_attendance_percentage"],
+                school_name=school_name,
+            )
+            merger.append(buf)
+        except Exception:
+            continue
+
+    merged_buffer = BytesIO()
+    merger.write(merged_buffer)
+    merged_buffer.seek(0)
+    return _SR(
+        merged_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=annual_reports_{class_name}_{academic_year}.pdf"}
+    )
