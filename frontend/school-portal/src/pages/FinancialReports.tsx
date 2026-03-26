@@ -7,7 +7,6 @@ import {
   useGetDefaultersReportQuery,
   useGetClassWiseCollectionQuery,
   useGetDailyCollectionQuery,
-  useGetDailyExpenditureQuery,
   useGetFundsQuery,
   useLazyGetStudentLedgerQuery,
   useLazyDownloadDailyCollectionQuery,
@@ -824,163 +823,6 @@ const DailyCollectionReport: React.FC = () => {
   );
 };
 
-const DailyExpenditureReport: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState(moment());
-
-  const { data, isLoading } = useGetDailyExpenditureQuery({
-    expenditure_date: selectedDate.format('YYYY-MM-DD'),
-  });
-
-  const salaryColumns = [
-    { title: 'Emp ID', dataIndex: 'employee_id', key: 'employee_id', render: (id: string) => id || '-' },
-    { title: 'Teacher Name', dataIndex: 'teacher_name', key: 'teacher_name' },
-    { title: 'Month', dataIndex: 'month', key: 'month' },
-    {
-      title: 'Amount',
-      dataIndex: 'amount',
-      key: 'amount',
-      render: (amount: number) => <span style={{ fontWeight: 'bold' }}>₹{amount.toLocaleString()}</span>,
-    },
-    {
-      title: 'Mode',
-      dataIndex: 'payment_mode',
-      key: 'payment_mode',
-      render: (mode: string) => <Tag>{mode}</Tag>,
-    },
-  ];
-
-  const expenseColumns = [
-    { title: 'Category', dataIndex: 'category', key: 'category', render: (c: string) => <Tag color="orange">{c}</Tag> },
-    { title: 'Description', dataIndex: 'description', key: 'description' },
-    {
-      title: 'Amount',
-      dataIndex: 'amount',
-      key: 'amount',
-      render: (amount: number) => <span style={{ fontWeight: 'bold', color: '#f5222d' }}>₹{amount.toLocaleString()}</span>,
-    },
-    {
-      title: 'Mode',
-      dataIndex: 'payment_mode',
-      key: 'payment_mode',
-      render: (mode: string) => <Tag>{mode}</Tag>,
-    },
-    { title: 'Notes', dataIndex: 'notes', key: 'notes', render: (n: string) => n || '-' },
-  ];
-
-  const modeData = data?.by_mode ? Object.entries(data.by_mode).map(([mode, amount]) => ({
-    mode, amount: amount as number,
-  })) : [];
-
-  const categoryData = data?.by_category ? Object.entries(data.by_category).map(([cat, amount]) => ({
-    cat, amount: amount as number,
-  })) : [];
-
-  const salaryTotal = data?.salaries?.reduce((s: number, r: any) => s + r.amount, 0) || 0;
-  const expenseTotal = data?.expenses?.reduce((s: number, r: any) => s + r.amount, 0) || 0;
-
-  return (
-    <div>
-      <Card style={{ marginBottom: 16 }}>
-        <Row gutter={16} align="middle">
-          <Col><strong>Select Date:</strong></Col>
-          <Col>
-            <DatePicker
-              value={selectedDate}
-              onChange={(date) => date && setSelectedDate(date)}
-              style={{ width: 200 }}
-            />
-          </Col>
-        </Row>
-      </Card>
-
-      {data && (
-        <>
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic title="Total Expenditure" value={data.total_amount} precision={2} prefix="₹" valueStyle={{ color: '#f5222d' }} />
-              </Card>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic title="Salary Paid" value={salaryTotal} precision={2} prefix="₹" valueStyle={{ color: '#fa8c16' }} />
-              </Card>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Card>
-                <Statistic title="Other Expenses" value={expenseTotal} precision={2} prefix="₹" valueStyle={{ color: '#f5222d' }} />
-              </Card>
-            </Col>
-          </Row>
-
-          <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col xs={24} md={16}>
-              <Card title="General Expenses" style={{ marginBottom: 16 }}>
-                <Table
-                  dataSource={data.expenses || []}
-                  columns={expenseColumns}
-                  pagination={{ pageSize: 10 }}
-                  rowKey="id"
-                  size="small"
-                  loading={isLoading}
-                  locale={{ emptyText: 'No general expenses for this date' }}
-                />
-              </Card>
-              <Card title="Salary Payments">
-                <Table
-                  dataSource={data.salaries || []}
-                  columns={salaryColumns}
-                  pagination={{ pageSize: 10 }}
-                  rowKey={(record: any) => `${record.teacher_name}-${record.month}`}
-                  size="small"
-                  loading={isLoading}
-                  locale={{ emptyText: 'No salary payments for this date' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} md={8}>
-              {categoryData.length > 0 && (
-                <Card title="By Category" style={{ marginBottom: 16 }}>
-                  <Table
-                    dataSource={categoryData}
-                    columns={[
-                      { title: 'Category', dataIndex: 'cat', key: 'cat', render: (c: string) => <Tag color="orange">{c}</Tag> },
-                      { title: 'Amount', dataIndex: 'amount', key: 'amount', render: (a: number) => `₹${a.toLocaleString()}` },
-                    ]}
-                    pagination={false}
-                    rowKey="cat"
-                    size="small"
-                  />
-                </Card>
-              )}
-              <Card title="By Payment Mode">
-                <Table
-                  dataSource={modeData}
-                  columns={[
-                    { title: 'Mode', dataIndex: 'mode', key: 'mode', render: (m: string) => <Tag color="red">{m}</Tag> },
-                    { title: 'Amount', dataIndex: 'amount', key: 'amount', render: (a: number) => `₹${a.toLocaleString()}` },
-                  ]}
-                  pagination={false}
-                  rowKey="mode"
-                  size="small"
-                />
-              </Card>
-            </Col>
-          </Row>
-        </>
-      )}
-
-      {!data && !isLoading && (
-        <Card>
-          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
-            No expenditure records for this date.
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-};
-
 const FinancialReports: React.FC = () => {
   return (
     <div>
@@ -998,9 +840,7 @@ const FinancialReports: React.FC = () => {
         <TabPane tab="Daily Collection" key="4" icon={<CalendarOutlined />}>
           <DailyCollectionReport />
         </TabPane>
-        <TabPane tab="Daily Expenditure" key="5" icon={<DollarOutlined />}>
-          <DailyExpenditureReport />
-        </TabPane>
+
       </Tabs>
     </div>
   );
