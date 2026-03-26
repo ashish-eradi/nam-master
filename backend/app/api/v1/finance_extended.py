@@ -1563,6 +1563,7 @@ def generate_bulk_fee_due_slips(
 # --- Print Settings ---
 
 from app.services.pdf_service import DEFAULT_PRINT_SETTINGS as _DEFAULT_PRINT_SETTINGS
+from app.services.report_card_service import DEFAULT_REPORT_CARD_SETTINGS as _DEFAULT_RC_SETTINGS
 
 @router.get("/print-settings", dependencies=[Depends(is_admin)])
 def get_print_settings(
@@ -1581,6 +1582,7 @@ def get_print_settings(
     for doc_type in ('receipt', 'fee_due'):
         defaults = _DEFAULT_PRINT_SETTINGS.get(doc_type, {})
         result[doc_type] = {**defaults, **saved.get(doc_type, {})}
+    result['report_card'] = {**_DEFAULT_RC_SETTINGS, **saved.get('report_card', {})}
     return result
 
 
@@ -1606,6 +1608,9 @@ def update_print_settings(
             for key in _tpl_keys:
                 if key in existing_print[doc_type] and key not in body.get(doc_type, {}):
                     body[doc_type][key] = existing_print[doc_type][key]
+    # Preserve report_card sub-section if not provided in this update
+    if 'report_card' not in body and 'report_card' in existing_print:
+        body['report_card'] = existing_print['report_card']
     current['print'] = body
     school.settings = current
     flag_modified(school, 'settings')

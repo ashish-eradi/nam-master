@@ -1128,9 +1128,10 @@ def download_report_card(
     except Exception:
         pass
 
-    # Get school info
+    # Get school info and print settings
     school = db.query(SchoolModel).filter(SchoolModel.id == ensure_uuid(school_id)).first()
     school_name = school.name if school else "School"
+    rc_print_settings = (school.settings or {}).get('print', {}).get('report_card', {}) if school else {}
 
     # Generate PDF
     pdf_buffer = ReportCardService.generate_report_card(
@@ -1155,7 +1156,8 @@ def download_report_card(
         attendance_percentage=attendance_pct,
         teacher_remarks=None,
         school_name=school_name,
-        school_logo_path=None
+        school_logo_path=None,
+        print_settings=rc_print_settings,
     )
 
     return StreamingResponse(
@@ -1230,9 +1232,10 @@ def download_class_report_cards(
         for r in parent_rels if r.parent and r.parent.father_name
     }
 
-    # Get school info
+    # Get school info and print settings
     school = db.query(SchoolModel).filter(SchoolModel.id == ensure_uuid(school_id)).first()
     school_name = school.name if school else "School"
+    rc_print_settings = (school.settings or {}).get('print', {}).get('report_card', {}) if school else {}
 
     class_obj = students[0].class_ if students else None
     class_name = class_obj.name if class_obj else "class"
@@ -1342,7 +1345,8 @@ def download_class_report_cards(
             attendance_percentage=att_pct,
             teacher_remarks=None,
             school_name=school_name,
-            school_logo_path=None
+            school_logo_path=None,
+            print_settings=rc_print_settings,
         )
         merger.append(pdf_buffer)
         generated_count += 1

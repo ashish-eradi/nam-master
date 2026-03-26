@@ -1070,6 +1070,7 @@ def download_student_annual_report(
         SchoolModel.id == uuid.UUID(school_id) if not isinstance(school_id, uuid.UUID) else school_id
     ).first()
     school_name = school.name if school else "School"
+    rc_print_settings = (school.settings or {}).get('print', {}).get('report_card', {}) if school else {}
 
     dob = None
     if data.get("date_of_birth"):
@@ -1094,6 +1095,7 @@ def download_student_annual_report(
         annual_present_days=data["annual_present_days"],
         annual_attendance_percentage=data["annual_attendance_percentage"],
         school_name=school_name,
+        print_settings=rc_print_settings,
     )
     return _SR(
         pdf_buffer,
@@ -1127,6 +1129,7 @@ def download_class_annual_reports(
 
     school = db.query(SchoolModel).filter(SchoolModel.id == uuid.UUID(str(school_id))).first()
     school_name = school.name if school else "School"
+    rc_print_settings = (school.settings or {}).get('print', {}).get('report_card', {}) if school else {}
     class_obj = students[0].class_ if students else None
     class_name = class_obj.name if class_obj else "class"
     section = getattr(class_obj, "section", None)
@@ -1157,6 +1160,7 @@ def download_class_annual_reports(
                 annual_present_days=data["annual_present_days"],
                 annual_attendance_percentage=data["annual_attendance_percentage"],
                 school_name=school_name,
+                print_settings=rc_print_settings,
             )
             merger.append(buf)
         except Exception:

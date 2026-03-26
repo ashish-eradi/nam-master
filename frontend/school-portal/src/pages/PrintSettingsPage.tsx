@@ -546,6 +546,73 @@ const DocSection: React.FC<{
   );
 };
 
+const REPORT_CARD_FIELDS = [
+  { key: 'show_hall_ticket', label: 'Hall Ticket No', desc: 'Show hall ticket number field on report card' },
+];
+
+const ReportCardSection: React.FC<{
+  settings: any;
+  onChange: (patch: any) => void;
+}> = ({ settings, onChange }) => (
+  <Card title={<span style={{ fontWeight: 600 }}>🎓 Report Card / Progress Card</span>} style={{ marginBottom: 28 }}>
+    <Row gutter={[32, 0]}>
+      <Col xs={24} lg={11}>
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ display: 'block', fontWeight: 500, marginBottom: 6 }}>Page Size</label>
+          <Select value={settings.page_size} onChange={(v) => onChange({ page_size: v })} style={{ width: '100%' }}>
+            {PAGE_SIZE_OPTIONS.map((o) => <Option key={o.value} value={o.value}>{o.label}</Option>)}
+          </Select>
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ display: 'block', fontWeight: 500, marginBottom: 6 }}>Header / Accent Colour</label>
+          <ColorPicker value={settings.primary_color} onChange={(v) => onChange({ primary_color: v })} />
+        </div>
+
+        <Space size={28} style={{ marginBottom: 18 }}>
+          <div>
+            <label style={{ fontWeight: 500, marginRight: 8 }}>Show Logo</label>
+            <Switch checked={settings.show_logo} onChange={(v) => onChange({ show_logo: v })} size="small" />
+          </div>
+          <div>
+            <label style={{ fontWeight: 500, marginRight: 8 }}>Signature Lines</label>
+            <Switch checked={settings.show_signature} onChange={(v) => onChange({ show_signature: v })} size="small" />
+          </div>
+        </Space>
+      </Col>
+
+      <Col xs={24} lg={13}>
+        <label style={{ display: 'block', fontWeight: 500, marginBottom: 10 }}>Optional Fields</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {REPORT_CARD_FIELDS.map((f) => (
+            <div
+              key={f.key}
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '10px 14px', border: '1px solid #e0e0e0', borderRadius: 8, background: '#fafafa',
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>{f.label}</div>
+                <Text type="secondary" style={{ fontSize: 12 }}>{f.desc}</Text>
+              </div>
+              <Switch
+                checked={!!settings[f.key]}
+                onChange={(v) => onChange({ [f.key]: v })}
+                size="small"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 16, padding: '10px 14px', background: '#f0f7ff', borderRadius: 8, fontSize: 12 }}>
+          <strong>Grade Scale:</strong> A+ ≥90% · A ≥80% · B+ ≥70% · B ≥60% · C ≥50% · D ≥40% · F &lt;40%
+        </div>
+      </Col>
+    </Row>
+  </Card>
+);
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const PrintSettingsPage: React.FC = () => {
   const { data: saved, isLoading } = useGetPrintSettingsQuery();
@@ -557,17 +624,21 @@ const PrintSettingsPage: React.FC = () => {
   const [feeDue, setFeeDue] = useState<any>({
     page_size: 'A4', template: 'formal', primary_color: '#dc2626', show_logo: true,
   });
+  const [reportCard, setReportCard] = useState<any>({
+    page_size: 'A4', primary_color: '#1890ff', show_logo: true, show_signature: true, show_hall_ticket: false,
+  });
 
   useEffect(() => {
     if (saved) {
       if (saved.receipt) setReceipt(saved.receipt);
       if (saved.fee_due) setFeeDue(saved.fee_due);
+      if (saved.report_card) setReportCard(saved.report_card);
     }
   }, [saved]);
 
   const handleSave = async () => {
     try {
-      await updateSettings({ receipt, fee_due: feeDue }).unwrap();
+      await updateSettings({ receipt, fee_due: feeDue, report_card: reportCard }).unwrap();
       message.success('Print settings saved');
     } catch {
       message.error('Failed to save settings');
@@ -600,6 +671,11 @@ const PrintSettingsPage: React.FC = () => {
         settings={feeDue}
         onChange={(patch) => setFeeDue((p: any) => ({ ...p, ...patch }))}
         templates={FEE_DUE_TEMPLATES}
+      />
+
+      <ReportCardSection
+        settings={reportCard}
+        onChange={(patch) => setReportCard((p: any) => ({ ...p, ...patch }))}
       />
 
       {/* Sticky save bar — always visible */}

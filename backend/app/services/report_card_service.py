@@ -4,7 +4,7 @@ Report Card / Progress Card PDF Generation Service
 Generates professional report cards with subject-wise marks, grades, and performance analysis.
 """
 
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
@@ -13,6 +13,19 @@ from io import BytesIO
 from datetime import datetime, date
 from typing import Optional, List, Dict
 import os
+
+DEFAULT_REPORT_CARD_SETTINGS = {
+    'page_size': 'A4',
+    'primary_color': '#1890ff',
+    'show_logo': True,
+    'show_hall_ticket': False,
+    'show_signature': True,
+}
+
+_PAGE_SIZES = {
+    'A4': A4,
+    'Letter': letter,
+}
 
 
 class ReportCardService:
@@ -45,25 +58,39 @@ class ReportCardService:
         attendance_percentage: Optional[float],
         teacher_remarks: Optional[str],
         school_name: str,
-        school_logo_path: Optional[str] = None
+        school_logo_path: Optional[str] = None,
+        print_settings: Optional[Dict] = None,
     ) -> BytesIO:
-        buffer = BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=A4)
+        settings = {**DEFAULT_REPORT_CARD_SETTINGS, **(print_settings or {})}
+        pagesize = _PAGE_SIZES.get(settings.get('page_size', 'A4'), A4)
+        primary_color = settings.get('primary_color', DEFAULT_REPORT_CARD_SETTINGS['primary_color'])
+        show_logo = settings.get('show_logo', True)
+        show_hall_ticket = settings.get('show_hall_ticket', False)
+        show_signature = settings.get('show_signature', True)
 
+        buffer = BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=pagesize)
+
+        page_w, page_h = pagesize
         y_position = ReportCardService._draw_header(
-            pdf, school_name, exam_series_name, academic_year, school_logo_path
+            pdf, school_name, exam_series_name, academic_year,
+            school_logo_path if show_logo else None,
+            primary_color, page_w, page_h
         )
         y_position = ReportCardService._draw_student_details(
             pdf, student_name, admission_number, class_name, section,
-            father_name, date_of_birth, roll_number, hall_ticket_number, y_position
+            father_name, date_of_birth, roll_number,
+            hall_ticket_number if show_hall_ticket else None,
+            y_position, page_w
         )
-        y_position = ReportCardService._draw_marks_table(pdf, marks_data, y_position)
+        y_position = ReportCardService._draw_marks_table(pdf, marks_data, y_position, primary_color, page_w)
         y_position = ReportCardService._draw_summary(
             pdf, total_marks_obtained, total_max_marks, percentage,
-            overall_grade, working_days, present_days, attendance_percentage, y_position
+            overall_grade, working_days, present_days, attendance_percentage, y_position, page_w
         )
-        y_position = ReportCardService._draw_remarks(pdf, teacher_remarks, y_position)
-        ReportCardService._draw_signature_boxes(pdf, y_position)
+        y_position = ReportCardService._draw_remarks(pdf, teacher_remarks, y_position, page_w)
+        if show_signature:
+            ReportCardService._draw_signature_boxes(pdf, y_position, page_w)
 
         pdf.save()
         buffer.seek(0)
@@ -85,73 +112,86 @@ class ReportCardService:
         annual_present_days: int,
         annual_attendance_percentage: float,
         school_name: str,
-        school_logo_path: Optional[str] = None
+        school_logo_path: Optional[str] = None,
+        print_settings: Optional[Dict] = None,
     ) -> BytesIO:
+        settings = {**DEFAULT_REPORT_CARD_SETTINGS, **(print_settings or {})}
+        pagesize = _PAGE_SIZES.get(settings.get('page_size', 'A4'), A4)
+        primary_color = settings.get('primary_color', DEFAULT_REPORT_CARD_SETTINGS['primary_color'])
+        show_logo = settings.get('show_logo', True)
+        show_signature = settings.get('show_signature', True)
+
         buffer = BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=A4)
+        pdf = canvas.Canvas(buffer, pagesize=pagesize)
+        page_w, page_h = pagesize
 
         y_position = ReportCardService._draw_header(
-            pdf, school_name, "Annual Progress Report", academic_year, school_logo_path
+            pdf, school_name, "Annual Progress Report", academic_year,
+            school_logo_path if show_logo else None,
+            primary_color, page_w, page_h
         )
         y_position = ReportCardService._draw_student_details(
             pdf, student_name, admission_number, class_name, section,
-            father_name, date_of_birth, roll_number, None, y_position
+            father_name, date_of_birth, roll_number, None, y_position, page_w
         )
 
         # All exams summary table
-        y_position = ReportCardService._draw_annual_exams_table(pdf, exams_data, y_position)
+        y_position = ReportCardService._draw_annual_exams_table(pdf, exams_data, y_position, primary_color, page_w)
 
         # Monthly attendance table
         y_position = ReportCardService._draw_monthly_attendance_table(
             pdf, monthly_attendance, annual_working_days, annual_present_days,
-            annual_attendance_percentage, y_position
+            annual_attendance_percentage, y_position, primary_color, page_w
         )
 
-        ReportCardService._draw_signature_boxes(pdf, y_position)
+        if show_signature:
+            ReportCardService._draw_signature_boxes(pdf, y_position, page_w)
 
         pdf.save()
         buffer.seek(0)
         return buffer
 
     @staticmethod
-    def _draw_header(pdf, school_name, exam_name, academic_year, logo_path):
-        y_pos = ReportCardService.PAGE_HEIGHT - ReportCardService.MARGIN
+    def _draw_header(pdf, school_name, exam_name, academic_year, logo_path,
+                     primary_color='#1890ff', page_w=None, page_h=None):
+        pw = page_w or ReportCardService.PAGE_WIDTH
+        ph = page_h or ReportCardService.PAGE_HEIGHT
+        margin = ReportCardService.MARGIN
+        y_pos = ph - margin
 
         if logo_path and os.path.exists(logo_path):
             try:
                 pdf.drawImage(
-                    logo_path,
-                    ReportCardService.MARGIN,
-                    y_pos - ReportCardService.LOGO_SIZE,
-                    width=ReportCardService.LOGO_SIZE,
-                    height=ReportCardService.LOGO_SIZE,
+                    logo_path, margin, y_pos - ReportCardService.LOGO_SIZE,
+                    width=ReportCardService.LOGO_SIZE, height=ReportCardService.LOGO_SIZE,
                     preserveAspectRatio=True
                 )
             except Exception:
                 pass
 
         pdf.setFont("Helvetica-Bold", 18)
-        pdf.drawCentredString(ReportCardService.PAGE_WIDTH / 2, y_pos - 10, school_name)
+        pdf.drawCentredString(pw / 2, y_pos - 10, school_name)
 
         pdf.setFont("Helvetica", 11)
-        pdf.drawCentredString(ReportCardService.PAGE_WIDTH / 2, y_pos - 30, f"Academic Year: {academic_year}")
+        pdf.drawCentredString(pw / 2, y_pos - 30, f"Academic Year: {academic_year}")
 
         pdf.setFont("Helvetica-Bold", 16)
-        pdf.setFillColor(colors.HexColor("#1890ff"))
-        pdf.drawCentredString(ReportCardService.PAGE_WIDTH / 2, y_pos - 55, "PROGRESS REPORT")
+        pdf.setFillColor(colors.HexColor(primary_color))
+        pdf.drawCentredString(pw / 2, y_pos - 55, "PROGRESS REPORT")
         pdf.setFillColor(colors.black)
 
         pdf.setFont("Helvetica-Bold", 12)
-        pdf.drawCentredString(ReportCardService.PAGE_WIDTH / 2, y_pos - 75, exam_name)
+        pdf.drawCentredString(pw / 2, y_pos - 75, exam_name)
 
-        pdf.line(ReportCardService.MARGIN, y_pos - 85,
-                 ReportCardService.PAGE_WIDTH - ReportCardService.MARGIN, y_pos - 85)
+        pdf.line(margin, y_pos - 85, pw - margin, y_pos - 85)
 
         return y_pos - 100
 
     @staticmethod
     def _draw_student_details(pdf, student_name, admission_number, class_name, section,
-                               father_name, dob, roll_number, hall_ticket, y_pos):
+                               father_name, dob, roll_number, hall_ticket, y_pos,
+                               page_w=None):
+        pw = page_w or ReportCardService.PAGE_WIDTH
         x = ReportCardService.MARGIN + 20
         lh = 17
         col2 = x + 310
@@ -192,12 +232,12 @@ class ReportCardService:
         # Separator line
         row -= 10
         pdf.setStrokeColor(colors.HexColor("#d9d9d9"))
-        pdf.line(x - 10, row, ReportCardService.PAGE_WIDTH - ReportCardService.MARGIN, row)
+        pdf.line(x - 10, row, pw - ReportCardService.MARGIN, row)
 
         return row - 10
 
     @staticmethod
-    def _draw_marks_table(pdf, marks_data, y_pos):
+    def _draw_marks_table(pdf, marks_data, y_pos, primary_color='#1890ff', page_w=None):
         pdf.setFont("Helvetica-Bold", 10)
         pdf.drawString(ReportCardService.MARGIN + 20, y_pos, "Subject-wise Performance:")
         y_pos -= 18
@@ -216,7 +256,7 @@ class ReportCardService:
         col_widths = [0.4*inch, 2.5*inch, 1.0*inch, 1.3*inch, 0.8*inch, 0.9*inch]
         table = Table(table_data, colWidths=col_widths)
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1890ff")),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(primary_color)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -240,10 +280,12 @@ class ReportCardService:
 
     @staticmethod
     def _draw_summary(pdf, total_obtained, total_max, percentage, overall_grade,
-                       working_days, present_days, attendance_pct, y_pos):
+                       working_days, present_days, attendance_pct, y_pos,
+                       page_w=None):
+        pw = page_w or ReportCardService.PAGE_WIDTH
         has_attendance = attendance_pct is not None
         box_height = 95 if has_attendance else 70
-        box_width = ReportCardService.PAGE_WIDTH - (2 * ReportCardService.MARGIN) - 20
+        box_width = pw - (2 * ReportCardService.MARGIN) - 20
         box_x = ReportCardService.MARGIN + 10
 
         pdf.setFillColor(colors.HexColor("#f0f7ff"))
@@ -283,7 +325,7 @@ class ReportCardService:
         return y_pos - box_height - 12
 
     @staticmethod
-    def _draw_annual_exams_table(pdf, exams_data, y_pos):
+    def _draw_annual_exams_table(pdf, exams_data, y_pos, primary_color='#1890ff', page_w=None):
         if not exams_data:
             return y_pos
 
@@ -304,7 +346,7 @@ class ReportCardService:
         col_widths = [2.5*inch, 1.2*inch, 1.0*inch, 1.2*inch, 0.9*inch]
         table = Table(table_data, colWidths=col_widths)
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#52c41a")),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(primary_color)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('ALIGN', (0, 1), (0, -1), 'LEFT'),
@@ -327,7 +369,7 @@ class ReportCardService:
 
     @staticmethod
     def _draw_monthly_attendance_table(pdf, monthly_data, annual_working, annual_present,
-                                        annual_pct, y_pos):
+                                        annual_pct, y_pos, primary_color='#1890ff', page_w=None):
         pdf.setFont("Helvetica-Bold", 10)
         pdf.drawString(ReportCardService.MARGIN + 20, y_pos, "Monthly Attendance:")
         y_pos -= 18
@@ -355,7 +397,7 @@ class ReportCardService:
         col_widths = [1.5*inch, 1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch]
         table = Table(table_data, colWidths=col_widths)
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#fa8c16")),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(primary_color)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('ALIGN', (0, 1), (0, -1), 'LEFT'),
@@ -379,7 +421,8 @@ class ReportCardService:
         return y_pos - table_height - 15
 
     @staticmethod
-    def _draw_remarks(pdf, remarks, y_pos):
+    def _draw_remarks(pdf, remarks, y_pos, page_w=None):
+        pw = page_w or ReportCardService.PAGE_WIDTH
         if not remarks:
             remarks = "Keep up the good work!"
 
@@ -387,7 +430,7 @@ class ReportCardService:
         pdf.drawString(ReportCardService.MARGIN + 20, y_pos, "Teacher's Remarks:")
         y_pos -= 15
 
-        box_width = ReportCardService.PAGE_WIDTH - (2 * ReportCardService.MARGIN) - 20
+        box_width = pw - (2 * ReportCardService.MARGIN) - 20
         box_height = 45
         box_x = ReportCardService.MARGIN + 10
 
@@ -415,7 +458,8 @@ class ReportCardService:
         return y_pos - box_height - 15
 
     @staticmethod
-    def _draw_signature_boxes(pdf, y_pos):
+    def _draw_signature_boxes(pdf, y_pos, page_w=None):
+        pw = page_w or ReportCardService.PAGE_WIDTH
         sig_y = max(y_pos - 30, 1.5 * inch)
 
         left_x = ReportCardService.MARGIN + 40
@@ -423,18 +467,18 @@ class ReportCardService:
         pdf.setFont("Helvetica", 8)
         pdf.drawString(left_x + 10, sig_y - 12, "Class Teacher")
 
-        mid_x = ReportCardService.PAGE_WIDTH / 2 - 0.65*inch
+        mid_x = pw / 2 - 0.65*inch
         pdf.line(mid_x, sig_y, mid_x + 1.3*inch, sig_y)
         pdf.drawString(mid_x + 15, sig_y - 12, "Parent/Guardian")
 
-        right_x = ReportCardService.PAGE_WIDTH - ReportCardService.MARGIN - 1.3*inch - 40
+        right_x = pw - ReportCardService.MARGIN - 1.3*inch - 40
         pdf.line(right_x, sig_y, right_x + 1.3*inch, sig_y)
         pdf.drawString(right_x + 25, sig_y - 12, "Principal")
 
         pdf.setFont("Helvetica-Oblique", 8)
         pdf.setFillColor(colors.grey)
         pdf.drawCentredString(
-            ReportCardService.PAGE_WIDTH / 2, 0.7 * inch,
+            pw / 2, 0.7 * inch,
             f"Report generated on {datetime.now().strftime('%d-%b-%Y')}"
         )
 
