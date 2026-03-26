@@ -72,28 +72,60 @@ class ReportCardService:
         pdf = canvas.Canvas(buffer, pagesize=pagesize)
 
         page_w, page_h = pagesize
-        y_position = ReportCardService._draw_header(
-            pdf, school_name, exam_series_name, academic_year,
-            school_logo_path if show_logo else None,
-            primary_color, page_w, page_h
-        )
-        y_position = ReportCardService._draw_student_details(
-            pdf, student_name, admission_number, class_name, section,
-            father_name, date_of_birth, roll_number,
-            hall_ticket_number if show_hall_ticket else None,
-            y_position, page_w
-        )
-        y_position = ReportCardService._draw_marks_table(pdf, marks_data, y_position, primary_color, page_w)
-        y_position = ReportCardService._draw_summary(
-            pdf, total_marks_obtained, total_max_marks, percentage,
-            overall_grade, working_days, present_days, attendance_percentage, y_position, page_w
-        )
-        y_position = ReportCardService._draw_remarks(pdf, teacher_remarks, y_position, page_w)
-        if show_signature:
-            ReportCardService._draw_signature_boxes(pdf, y_position, page_w)
+        pdf_tpl_bytes = None
+
+        if settings.get('custom_template_data'):
+            # Custom template mode: draw background + fields at stored positions
+            dob_str = date_of_birth.strftime("%d-%b-%Y") if date_of_birth else None
+            student_data = {
+                'student_name': student_name,
+                'father_name': father_name,
+                'admission_number': admission_number,
+                'class_section': class_name + (f" - {section}" if section else ""),
+                'roll_number': roll_number,
+                'dob_str': dob_str,
+                'hall_ticket': hall_ticket_number if show_hall_ticket else None,
+                'exam_name': exam_series_name,
+                'academic_year': academic_year,
+            }
+            summary_data = {
+                'total_obtained': total_marks_obtained,
+                'total_max': total_max_marks,
+                'percentage': percentage,
+                'overall_grade': overall_grade,
+                'attendance_pct': attendance_percentage,
+                'present_days': present_days,
+                'working_days': working_days,
+            }
+            pdf_tpl_bytes = ReportCardService._draw_custom_template_content(
+                pdf, settings, page_w, page_h, student_data, marks_data, summary_data
+            )
+        else:
+            # Standard structured mode
+            y_position = ReportCardService._draw_header(
+                pdf, school_name, exam_series_name, academic_year,
+                school_logo_path if show_logo else None,
+                primary_color, page_w, page_h
+            )
+            y_position = ReportCardService._draw_student_details(
+                pdf, student_name, admission_number, class_name, section,
+                father_name, date_of_birth, roll_number,
+                hall_ticket_number if show_hall_ticket else None,
+                y_position, page_w
+            )
+            y_position = ReportCardService._draw_marks_table(pdf, marks_data, y_position, primary_color, page_w)
+            y_position = ReportCardService._draw_summary(
+                pdf, total_marks_obtained, total_max_marks, percentage,
+                overall_grade, working_days, present_days, attendance_percentage, y_position, page_w
+            )
+            y_position = ReportCardService._draw_remarks(pdf, teacher_remarks, y_position, page_w)
+            if show_signature:
+                ReportCardService._draw_signature_boxes(pdf, y_position, page_w)
 
         pdf.save()
         buffer.seek(0)
+        if pdf_tpl_bytes:
+            buffer = ReportCardService._merge_pdf_template(buffer, pdf_tpl_bytes)
         return buffer
 
     @staticmethod
@@ -124,32 +156,197 @@ class ReportCardService:
         buffer = BytesIO()
         pdf = canvas.Canvas(buffer, pagesize=pagesize)
         page_w, page_h = pagesize
+        pdf_tpl_bytes = None
 
-        y_position = ReportCardService._draw_header(
-            pdf, school_name, "Annual Progress Report", academic_year,
-            school_logo_path if show_logo else None,
-            primary_color, page_w, page_h
-        )
-        y_position = ReportCardService._draw_student_details(
-            pdf, student_name, admission_number, class_name, section,
-            father_name, date_of_birth, roll_number, None, y_position, page_w
-        )
+        if settings.get('custom_template_data'):
+            # Custom template mode for annual report
+            dob_str = date_of_birth.strftime("%d-%b-%Y") if date_of_birth else None
+            student_data = {
+                'student_name': student_name,
+                'father_name': father_name,
+                'admission_number': admission_number,
+                'class_section': class_name + (f" - {section}" if section else ""),
+                'roll_number': roll_number,
+                'dob_str': dob_str,
+                'hall_ticket': None,
+                'exam_name': "Annual Progress Report",
+                'academic_year': academic_year,
+            }
+            # Build a flat marks_data list from all exams for the marks_table position
+            flat_marks = []
+            for exam in exams_data:
+                flat_marks.append({
+                    'subject_name': exam.get('exam_name', '-'),
+                    'max_marks': exam.get('total_max', 0),
+                    'marks_obtained': exam.get('total_obtained', 0),
+                    'grade': exam.get('overall_grade', '-'),
+                    'is_absent': False,
+                })
+            summary_data = {
+                'total_obtained': annual_present_days,
+                'total_max': annual_working_days,
+                'percentage': annual_attendance_percentage,
+                'overall_grade': '-',
+                'attendance_pct': annual_attendance_percentage,
+                'present_days': annual_present_days,
+                'working_days': annual_working_days,
+            }
+            pdf_tpl_bytes = ReportCardService._draw_custom_template_content(
+                pdf, settings, page_w, page_h, student_data, flat_marks, summary_data
+            )
+        else:
+            y_position = ReportCardService._draw_header(
+                pdf, school_name, "Annual Progress Report", academic_year,
+                school_logo_path if show_logo else None,
+                primary_color, page_w, page_h
+            )
+            y_position = ReportCardService._draw_student_details(
+                pdf, student_name, admission_number, class_name, section,
+                father_name, date_of_birth, roll_number, None, y_position, page_w
+            )
 
-        # All exams summary table
-        y_position = ReportCardService._draw_annual_exams_table(pdf, exams_data, y_position, primary_color, page_w)
+            # All exams summary table
+            y_position = ReportCardService._draw_annual_exams_table(pdf, exams_data, y_position, primary_color, page_w)
 
-        # Monthly attendance table
-        y_position = ReportCardService._draw_monthly_attendance_table(
-            pdf, monthly_attendance, annual_working_days, annual_present_days,
-            annual_attendance_percentage, y_position, primary_color, page_w
-        )
+            # Monthly attendance table
+            y_position = ReportCardService._draw_monthly_attendance_table(
+                pdf, monthly_attendance, annual_working_days, annual_present_days,
+                annual_attendance_percentage, y_position, primary_color, page_w
+            )
 
-        if show_signature:
-            ReportCardService._draw_signature_boxes(pdf, y_position, page_w)
+            if show_signature:
+                ReportCardService._draw_signature_boxes(pdf, y_position, page_w)
 
         pdf.save()
         buffer.seek(0)
+        if pdf_tpl_bytes:
+            buffer = ReportCardService._merge_pdf_template(buffer, pdf_tpl_bytes)
         return buffer
+
+    @staticmethod
+    def _draw_at_pos(pdf, W, H, positions, key, value, show_label=False, label='', bold=False, font_size=10):
+        """Draw a field value at stored (x%, y%) position. No-op if key not placed."""
+        pos = positions.get(key)
+        if pos is None:
+            return
+        x = W * pos['x'] / 100
+        y = H * (1.0 - pos['y'] / 100)
+        if show_label and label:
+            pdf.setFont("Helvetica-Bold", font_size)
+            pdf.drawString(x, y, label)
+            lw = pdf.stringWidth(label, "Helvetica-Bold", font_size) + 4
+            pdf.setFont("Helvetica", font_size)
+            pdf.drawString(x + lw, y, value)
+        else:
+            pdf.setFont("Helvetica-Bold" if bold else "Helvetica", font_size)
+            pdf.drawString(x, y, value)
+
+    @staticmethod
+    def _draw_custom_template_content(pdf, settings, page_w, page_h,
+                                       student_data, marks_data, summary_data):
+        """Draw content on custom template background. Returns pdf_tpl_bytes if PDF template."""
+        import base64
+        from reportlab.lib.utils import ImageReader
+
+        b64 = settings.get('custom_template_data')
+        ext = settings.get('custom_template_ext', '.png').lower()
+        positions = settings.get('custom_field_positions') or {}
+        show_labels = settings.get('custom_show_labels', False)
+        primary_color = settings.get('primary_color', '#1890ff')
+        pdf_tpl_bytes = None
+
+        if b64:
+            try:
+                file_bytes = base64.b64decode(b64)
+                if ext in ('.png', '.jpg', '.jpeg'):
+                    pdf.drawImage(ImageReader(BytesIO(file_bytes)), 0, 0,
+                                  width=page_w, height=page_h, preserveAspectRatio=False)
+                elif ext == '.pdf':
+                    pdf_tpl_bytes = file_bytes
+            except Exception:
+                pass
+
+        D = ReportCardService._draw_at_pos
+        sl = show_labels
+        W, H = page_w, page_h
+
+        # Student detail fields
+        D(pdf, W, H, positions, 'student_name',  student_data['student_name'],                 sl, 'Student Name:', bold=True)
+        D(pdf, W, H, positions, 'father_name',   student_data.get('father_name') or '-',       sl, "Father's Name:")
+        D(pdf, W, H, positions, 'admission_no',  student_data['admission_number'],              sl, 'Admission No:')
+        D(pdf, W, H, positions, 'class_section', student_data['class_section'],                sl, 'Class:')
+        D(pdf, W, H, positions, 'roll_no',       student_data.get('roll_number') or '-',       sl, 'Roll No:')
+        D(pdf, W, H, positions, 'dob',           student_data.get('dob_str') or '-',           sl, 'Date of Birth:')
+        D(pdf, W, H, positions, 'hall_ticket',   student_data.get('hall_ticket') or '-',       sl, 'Hall Ticket:')
+        D(pdf, W, H, positions, 'exam_name',     student_data.get('exam_name') or '',          sl, 'Exam:')
+        D(pdf, W, H, positions, 'academic_year', student_data.get('academic_year') or '',      sl, 'Academic Year:')
+
+        # Summary fields
+        pct_str = f"{summary_data['percentage']:.1f}%"
+        D(pdf, W, H, positions, 'percentage',    pct_str,                                      sl, 'Percentage:', bold=True)
+        D(pdf, W, H, positions, 'overall_grade', summary_data['overall_grade'],                sl, 'Grade:', bold=True)
+        D(pdf, W, H, positions, 'total_marks',
+          f"{summary_data['total_obtained']} / {summary_data['total_max']}",                   sl, 'Total Marks:')
+
+        if summary_data.get('attendance_pct') is not None:
+            att_str = f"{summary_data['attendance_pct']:.1f}%"
+            if summary_data.get('present_days') is not None:
+                att_str += f"  ({summary_data['present_days']} / {summary_data['working_days']} days)"
+            D(pdf, W, H, positions, 'attendance', att_str, sl, 'Attendance:')
+
+        # Marks table
+        if 'marks_table' in positions:
+            pos = positions['marks_table']
+            tx = W * pos['x'] / 100
+            ty = H * (1.0 - pos['y'] / 100)
+            td = [["Subject", "Max", "Obtained", "Grade"]]
+            for mk in marks_data:
+                td.append([
+                    mk.get('subject_name', ''),
+                    str(mk.get('max_marks', 0)),
+                    '-' if mk.get('is_absent') else str(mk.get('marks_obtained', '-')),
+                    '-' if mk.get('is_absent') else mk.get('grade', '-'),
+                ])
+            cw = [2.4*inch, 0.8*inch, 1.0*inch, 0.8*inch]
+            tbl = Table(td, colWidths=cw)
+            tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(primary_color)),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f5f5')]),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            _, th = tbl.wrap(0, 0)
+            tbl.drawOn(pdf, tx, ty - th)
+
+        return pdf_tpl_bytes
+
+    @staticmethod
+    def _merge_pdf_template(content_buffer: BytesIO, template_bytes: bytes) -> BytesIO:
+        """Overlay ReportLab content on top of a PDF template background page."""
+        try:
+            from PyPDF2 import PdfReader, PdfWriter
+            tpl_reader = PdfReader(BytesIO(template_bytes))
+            content_reader = PdfReader(content_buffer)
+            if not tpl_reader.pages or not content_reader.pages:
+                content_buffer.seek(0)
+                return content_buffer
+            tpl_page = tpl_reader.pages[0]
+            tpl_page.merge_page(content_reader.pages[0])
+            writer = PdfWriter()
+            writer.add_page(tpl_page)
+            out = BytesIO()
+            writer.write(out)
+            out.seek(0)
+            return out
+        except Exception:
+            content_buffer.seek(0)
+            return content_buffer
 
     @staticmethod
     def _draw_header(pdf, school_name, exam_name, academic_year, logo_path,

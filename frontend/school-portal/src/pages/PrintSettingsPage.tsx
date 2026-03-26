@@ -68,6 +68,23 @@ const FEE_DUE_FIELDS = [
   { key: 'total_outstanding',  label: 'Total Outstanding' },
 ];
 
+const REPORT_CARD_FIELDS = [
+  { key: 'student_name',  label: 'Student Name' },
+  { key: 'father_name',   label: "Father's Name" },
+  { key: 'admission_no',  label: 'Admission No' },
+  { key: 'class_section', label: 'Class / Section' },
+  { key: 'roll_no',       label: 'Roll No' },
+  { key: 'dob',           label: 'Date of Birth' },
+  { key: 'hall_ticket',   label: 'Hall Ticket No' },
+  { key: 'exam_name',     label: 'Exam Name' },
+  { key: 'academic_year', label: 'Academic Year' },
+  { key: 'marks_table',   label: 'Marks Table' },
+  { key: 'total_marks',   label: 'Total Marks' },
+  { key: 'percentage',    label: 'Percentage' },
+  { key: 'overall_grade', label: 'Overall Grade' },
+  { key: 'attendance',    label: 'Attendance' },
+];
+
 const getApiBaseUrl = () => {
   if (window.location.hostname.includes('cloudshell.dev')) return window.location.origin + '/api/v1';
   return (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/api/v1';
@@ -124,14 +141,14 @@ const TemplateTile: React.FC<{ tpl: { value: string; label: string; desc: string
 
 // ── Visual Field Mapper ───────────────────────────────────────────────────────
 const TemplateFieldMapper: React.FC<{
-  docType: 'receipt' | 'fee_due';
+  docType: 'receipt' | 'fee_due' | 'report_card';
   templateUrl: string;
   positions: Record<string, { x: number; y: number }>;
   onChange: (positions: Record<string, { x: number; y: number }>) => void;
   showLabels: boolean;
   onShowLabelsChange: (v: boolean) => void;
 }> = ({ docType, templateUrl, positions, onChange, showLabels, onShowLabelsChange }) => {
-  const fields = docType === 'receipt' ? RECEIPT_FIELDS : FEE_DUE_FIELDS;
+  const fields = docType === 'receipt' ? RECEIPT_FIELDS : docType === 'fee_due' ? FEE_DUE_FIELDS : REPORT_CARD_FIELDS;
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState(false);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
@@ -356,7 +373,7 @@ const TemplateFieldMapper: React.FC<{
 
 // ── Template Upload Section ───────────────────────────────────────────────────
 const TemplateUploadSection: React.FC<{
-  docType: 'receipt' | 'fee_due';
+  docType: 'receipt' | 'fee_due' | 'report_card';
   label: string;
   currentUrl?: string;
 }> = ({ docType, label, currentUrl }) => {
@@ -546,72 +563,106 @@ const DocSection: React.FC<{
   );
 };
 
-const REPORT_CARD_FIELDS = [
-  { key: 'show_hall_ticket', label: 'Hall Ticket No', desc: 'Show hall ticket number field on report card' },
-];
-
 const ReportCardSection: React.FC<{
   settings: any;
   onChange: (patch: any) => void;
-}> = ({ settings, onChange }) => (
-  <Card title={<span style={{ fontWeight: 600 }}>🎓 Report Card / Progress Card</span>} style={{ marginBottom: 28 }}>
-    <Row gutter={[32, 0]}>
-      <Col xs={24} lg={11}>
-        <div style={{ marginBottom: 18 }}>
-          <label style={{ display: 'block', fontWeight: 500, marginBottom: 6 }}>Page Size</label>
-          <Select value={settings.page_size} onChange={(v) => onChange({ page_size: v })} style={{ width: '100%' }}>
-            {PAGE_SIZE_OPTIONS.map((o) => <Option key={o.value} value={o.value}>{o.label}</Option>)}
-          </Select>
-        </div>
+}> = ({ settings, onChange }) => {
+  const hasImageTemplate = settings.custom_template_url &&
+    (settings.custom_template_url.endsWith('.png') ||
+     settings.custom_template_url.endsWith('.jpg') ||
+     settings.custom_template_url.endsWith('.jpeg'));
 
-        <div style={{ marginBottom: 18 }}>
-          <label style={{ display: 'block', fontWeight: 500, marginBottom: 6 }}>Header / Accent Colour</label>
-          <ColorPicker value={settings.primary_color} onChange={(v) => onChange({ primary_color: v })} />
-        </div>
-
-        <Space size={28} style={{ marginBottom: 18 }}>
-          <div>
-            <label style={{ fontWeight: 500, marginRight: 8 }}>Show Logo</label>
-            <Switch checked={settings.show_logo} onChange={(v) => onChange({ show_logo: v })} size="small" />
+  return (
+    <Card title={<span style={{ fontWeight: 600 }}>🎓 Report Card / Progress Card</span>} style={{ marginBottom: 28 }}>
+      <Row gutter={[32, 0]}>
+        {/* Left: options */}
+        <Col xs={24} lg={11}>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: 'block', fontWeight: 500, marginBottom: 6 }}>Page Size</label>
+            <Select value={settings.page_size} onChange={(v) => onChange({ page_size: v })} style={{ width: '100%' }}>
+              {PAGE_SIZE_OPTIONS.map((o) => <Option key={o.value} value={o.value}>{o.label}</Option>)}
+            </Select>
           </div>
-          <div>
-            <label style={{ fontWeight: 500, marginRight: 8 }}>Signature Lines</label>
-            <Switch checked={settings.show_signature} onChange={(v) => onChange({ show_signature: v })} size="small" />
-          </div>
-        </Space>
-      </Col>
 
-      <Col xs={24} lg={13}>
-        <label style={{ display: 'block', fontWeight: 500, marginBottom: 10 }}>Optional Fields</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {REPORT_CARD_FIELDS.map((f) => (
-            <div
-              key={f.key}
-              style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '10px 14px', border: '1px solid #e0e0e0', borderRadius: 8, background: '#fafafa',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 500, fontSize: 13 }}>{f.label}</div>
-                <Text type="secondary" style={{ fontSize: 12 }}>{f.desc}</Text>
-              </div>
-              <Switch
-                checked={!!settings[f.key]}
-                onChange={(v) => onChange({ [f.key]: v })}
-                size="small"
-              />
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: 'block', fontWeight: 500, marginBottom: 6 }}>Header / Accent Colour</label>
+            <ColorPicker value={settings.primary_color} onChange={(v) => onChange({ primary_color: v })} />
+          </div>
+
+          <Space size={28} style={{ marginBottom: 18 }}>
+            <div>
+              <label style={{ fontWeight: 500, marginRight: 8 }}>Show Logo</label>
+              <Switch checked={settings.show_logo} onChange={(v) => onChange({ show_logo: v })} size="small" />
             </div>
-          ))}
-        </div>
+            <div>
+              <label style={{ fontWeight: 500, marginRight: 8 }}>Signature Lines</label>
+              <Switch checked={settings.show_signature} onChange={(v) => onChange({ show_signature: v })} size="small" />
+            </div>
+          </Space>
 
-        <div style={{ marginTop: 16, padding: '10px 14px', background: '#f0f7ff', borderRadius: 8, fontSize: 12 }}>
-          <strong>Grade Scale:</strong> A+ ≥90% · A ≥80% · B+ ≥70% · B ≥60% · C ≥50% · D ≥40% · F &lt;40%
-        </div>
-      </Col>
-    </Row>
-  </Card>
-);
+          <Space size={28} style={{ marginBottom: 18 }}>
+            <div>
+              <label style={{ fontWeight: 500, marginRight: 8 }}>Hall Ticket No</label>
+              <Switch checked={!!settings.show_hall_ticket} onChange={(v) => onChange({ show_hall_ticket: v })} size="small" />
+            </div>
+          </Space>
+
+          <Divider style={{ margin: '12px 0' }} />
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 500, marginBottom: 8 }}>Custom Template</label>
+            <Alert
+              type="info"
+              showIcon
+              message="Upload your full-page report card design as PNG/JPG. Then drag each field to its position on the template."
+              style={{ fontSize: 12, marginBottom: 10 }}
+            />
+            <TemplateUploadSection
+              docType="report_card"
+              label="Report Card"
+              currentUrl={settings.custom_template_url}
+            />
+          </div>
+        </Col>
+
+        {/* Right: info box */}
+        <Col xs={24} lg={13}>
+          <label style={{ display: 'block', fontWeight: 500, marginBottom: 8 }}>
+            Design Template
+            {settings.custom_template_url && (
+              <Tag color="warning" style={{ marginLeft: 8, fontSize: 11 }}>Overridden by uploaded template</Tag>
+            )}
+          </label>
+          <div style={{ padding: '12px 14px', border: '1px solid #e0e0e0', borderRadius: 8, background: '#fafafa' }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              The default layout is a structured programmatic design with header, marks table, summary, and signature boxes.
+              Upload a custom PNG/JPG template above to overlay your own design.
+            </Text>
+          </div>
+
+          <div style={{ marginTop: 16, padding: '10px 14px', background: '#f0f7ff', borderRadius: 8, fontSize: 12 }}>
+            <strong>Grade Scale:</strong> A+ ≥90% · A ≥80% · B+ ≥70% · B ≥60% · C ≥50% · D ≥40% · F &lt;40%
+          </div>
+        </Col>
+      </Row>
+
+      {/* Full-width field mapper — shown when PNG/JPG template is uploaded */}
+      {hasImageTemplate && (
+        <>
+          <Divider style={{ margin: '20px 0 16px' }} />
+          <TemplateFieldMapper
+            docType="report_card"
+            templateUrl={settings.custom_template_url}
+            positions={settings.custom_field_positions || {}}
+            onChange={(pos) => onChange({ custom_field_positions: pos })}
+            showLabels={settings.custom_show_labels ?? false}
+            onShowLabelsChange={(v) => onChange({ custom_show_labels: v })}
+          />
+        </>
+      )}
+    </Card>
+  );
+};
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const PrintSettingsPage: React.FC = () => {

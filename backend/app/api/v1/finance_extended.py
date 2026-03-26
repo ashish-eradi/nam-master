@@ -1603,7 +1603,7 @@ def update_print_settings(
     # (frontend never sends template binary fields, so keep what's in DB)
     existing_print = current.get('print', {})
     _tpl_keys = ('custom_template_url', 'custom_template_data', 'custom_template_ext')
-    for doc_type in ('receipt', 'fee_due'):
+    for doc_type in ('receipt', 'fee_due', 'report_card'):
         if doc_type in body and doc_type in existing_print:
             for key in _tpl_keys:
                 if key in existing_print[doc_type] and key not in body.get(doc_type, {}):
@@ -1634,8 +1634,8 @@ async def upload_print_template(
 ):
     """Upload a custom template image/PDF for receipts or fee due slips."""
     import base64
-    if doc_type not in ("receipt", "fee_due"):
-        raise HTTPException(status_code=400, detail="doc_type must be 'receipt' or 'fee_due'")
+    if doc_type not in ("receipt", "fee_due", "report_card"):
+        raise HTTPException(status_code=400, detail="doc_type must be 'receipt', 'fee_due', or 'report_card'")
 
     ext = FilePath(file.filename).suffix.lower()
     if ext not in ALLOWED_TEMPLATE_EXTS:
@@ -1684,8 +1684,8 @@ def remove_print_template(
     school_id: str = Depends(get_current_user_school)
 ):
     """Remove a custom template, reverting to the programmatic design."""
-    if doc_type not in ("receipt", "fee_due"):
-        raise HTTPException(status_code=400, detail="doc_type must be 'receipt' or 'fee_due'")
+    if doc_type not in ("receipt", "fee_due", "report_card"):
+        raise HTTPException(status_code=400, detail="doc_type must be 'receipt', 'fee_due', or 'report_card'")
 
     from app.models.school import School as SchoolModel
     from sqlalchemy.orm.attributes import flag_modified
@@ -1720,7 +1720,7 @@ def get_template_preview(
     import base64
     from fastapi.responses import Response
     from app.models.school import School as SchoolModel
-    if doc_type not in ("receipt", "fee_due"):
+    if doc_type not in ("receipt", "fee_due", "report_card"):
         raise HTTPException(status_code=400, detail="Invalid doc_type")
     school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
     if not school:
