@@ -832,22 +832,9 @@ const DailyExpenditureReport: React.FC = () => {
   });
 
   const salaryColumns = [
-    {
-      title: 'Employee ID',
-      dataIndex: 'employee_id',
-      key: 'employee_id',
-      render: (id: string) => id || '-',
-    },
-    {
-      title: 'Teacher Name',
-      dataIndex: 'teacher_name',
-      key: 'teacher_name',
-    },
-    {
-      title: 'Month',
-      dataIndex: 'month',
-      key: 'month',
-    },
+    { title: 'Emp ID', dataIndex: 'employee_id', key: 'employee_id', render: (id: string) => id || '-' },
+    { title: 'Teacher Name', dataIndex: 'teacher_name', key: 'teacher_name' },
+    { title: 'Month', dataIndex: 'month', key: 'month' },
     {
       title: 'Amount',
       dataIndex: 'amount',
@@ -855,40 +842,47 @@ const DailyExpenditureReport: React.FC = () => {
       render: (amount: number) => <span style={{ fontWeight: 'bold' }}>₹{amount.toLocaleString()}</span>,
     },
     {
-      title: 'Payment Mode',
+      title: 'Mode',
       dataIndex: 'payment_mode',
       key: 'payment_mode',
       render: (mode: string) => <Tag>{mode}</Tag>,
     },
   ];
 
-  const modeData = data?.by_mode ? Object.entries(data.by_mode).map(([mode, amount]) => ({
-    mode,
-    amount: amount as number,
-  })) : [];
-
-  const modeColumns = [
-    {
-      title: 'Payment Mode',
-      dataIndex: 'mode',
-      key: 'mode',
-      render: (mode: string) => <Tag color="red">{mode}</Tag>,
-    },
+  const expenseColumns = [
+    { title: 'Category', dataIndex: 'category', key: 'category', render: (c: string) => <Tag color="orange">{c}</Tag> },
+    { title: 'Description', dataIndex: 'description', key: 'description' },
     {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount: number) => `₹${amount.toLocaleString()}`,
+      render: (amount: number) => <span style={{ fontWeight: 'bold', color: '#f5222d' }}>₹{amount.toLocaleString()}</span>,
     },
+    {
+      title: 'Mode',
+      dataIndex: 'payment_mode',
+      key: 'payment_mode',
+      render: (mode: string) => <Tag>{mode}</Tag>,
+    },
+    { title: 'Notes', dataIndex: 'notes', key: 'notes', render: (n: string) => n || '-' },
   ];
+
+  const modeData = data?.by_mode ? Object.entries(data.by_mode).map(([mode, amount]) => ({
+    mode, amount: amount as number,
+  })) : [];
+
+  const categoryData = data?.by_category ? Object.entries(data.by_category).map(([cat, amount]) => ({
+    cat, amount: amount as number,
+  })) : [];
+
+  const salaryTotal = data?.salaries?.reduce((s: number, r: any) => s + r.amount, 0) || 0;
+  const expenseTotal = data?.expenses?.reduce((s: number, r: any) => s + r.amount, 0) || 0;
 
   return (
     <div>
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={16} align="middle">
-          <Col>
-            <strong>Select Date:</strong>
-          </Col>
+          <Col><strong>Select Date:</strong></Col>
           <Col>
             <DatePicker
               value={selectedDate}
@@ -902,46 +896,70 @@ const DailyExpenditureReport: React.FC = () => {
       {data && (
         <>
           <Row gutter={16} style={{ marginBottom: 16 }}>
-            <Col xs={24} sm={12}>
+            <Col xs={24} sm={8}>
               <Card>
-                <Statistic
-                  title="Total Expenditure"
-                  value={data.total_amount}
-                  precision={2}
-                  prefix="₹"
-                  valueStyle={{ color: '#f5222d' }}
-                />
+                <Statistic title="Total Expenditure" value={data.total_amount} precision={2} prefix="₹" valueStyle={{ color: '#f5222d' }} />
               </Card>
             </Col>
-            <Col xs={24} sm={12}>
+            <Col xs={24} sm={8}>
               <Card>
-                <Statistic
-                  title="Total Payments"
-                  value={data.total_payments}
-                  prefix={<DollarOutlined />}
-                />
+                <Statistic title="Salary Paid" value={salaryTotal} precision={2} prefix="₹" valueStyle={{ color: '#fa8c16' }} />
+              </Card>
+            </Col>
+            <Col xs={24} sm={8}>
+              <Card>
+                <Statistic title="Other Expenses" value={expenseTotal} precision={2} prefix="₹" valueStyle={{ color: '#f5222d' }} />
               </Card>
             </Col>
           </Row>
 
-          <Row gutter={16}>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
             <Col xs={24} md={16}>
-              <Card title="Salary Payments" style={{ marginBottom: 16 }}>
+              <Card title="General Expenses" style={{ marginBottom: 16 }}>
                 <Table
-                  dataSource={data.salaries}
-                  columns={salaryColumns}
+                  dataSource={data.expenses || []}
+                  columns={expenseColumns}
                   pagination={{ pageSize: 10 }}
-                  rowKey={(record) => `${record.teacher_name}-${record.month}`}
+                  rowKey="id"
                   size="small"
                   loading={isLoading}
+                  locale={{ emptyText: 'No general expenses for this date' }}
+                />
+              </Card>
+              <Card title="Salary Payments">
+                <Table
+                  dataSource={data.salaries || []}
+                  columns={salaryColumns}
+                  pagination={{ pageSize: 10 }}
+                  rowKey={(record: any) => `${record.teacher_name}-${record.month}`}
+                  size="small"
+                  loading={isLoading}
+                  locale={{ emptyText: 'No salary payments for this date' }}
                 />
               </Card>
             </Col>
             <Col xs={24} md={8}>
+              {categoryData.length > 0 && (
+                <Card title="By Category" style={{ marginBottom: 16 }}>
+                  <Table
+                    dataSource={categoryData}
+                    columns={[
+                      { title: 'Category', dataIndex: 'cat', key: 'cat', render: (c: string) => <Tag color="orange">{c}</Tag> },
+                      { title: 'Amount', dataIndex: 'amount', key: 'amount', render: (a: number) => `₹${a.toLocaleString()}` },
+                    ]}
+                    pagination={false}
+                    rowKey="cat"
+                    size="small"
+                  />
+                </Card>
+              )}
               <Card title="By Payment Mode">
                 <Table
                   dataSource={modeData}
-                  columns={modeColumns}
+                  columns={[
+                    { title: 'Mode', dataIndex: 'mode', key: 'mode', render: (m: string) => <Tag color="red">{m}</Tag> },
+                    { title: 'Amount', dataIndex: 'amount', key: 'amount', render: (a: number) => `₹${a.toLocaleString()}` },
+                  ]}
                   pagination={false}
                   rowKey="mode"
                   size="small"

@@ -10,7 +10,8 @@ import type {
   StudentFeeStructure, StudentFeeAssignment,
   StudentLedger, StudentOutstanding,
   PaymentCreateWithAllocations,
-  BulkClassFeeCreate, BulkPaymentCreate, BulkConcessionCreate
+  BulkClassFeeCreate, BulkPaymentCreate, BulkConcessionCreate,
+  Expenditure, ExpenditureCreate, ExpenditureUpdate
 } from '../schemas/finance_schema';
 
 export const financeApi = api.injectEndpoints({
@@ -373,6 +374,24 @@ export const financeApi = api.injectEndpoints({
       }),
       providesTags: ['StudentFee'],
     }),
+
+    // Expenditure CRUD
+    getExpenditures: builder.query<Expenditure[], { start_date?: string; end_date?: string; category?: string }>({
+      query: (params) => ({ url: 'finance/expenditures', params }),
+      providesTags: ['Expenditure'],
+    }),
+    createExpenditure: builder.mutation<Expenditure, ExpenditureCreate>({
+      query: (body) => ({ url: 'finance/expenditures', method: 'POST', body }),
+      invalidatesTags: ['Expenditure', 'FinanceReport'],
+    }),
+    updateExpenditure: builder.mutation<Expenditure, { id: string; body: ExpenditureUpdate }>({
+      query: ({ id, body }) => ({ url: `finance/expenditures/${id}`, method: 'PUT', body }),
+      invalidatesTags: ['Expenditure', 'FinanceReport'],
+    }),
+    deleteExpenditure: builder.mutation<void, string>({
+      query: (id) => ({ url: `finance/expenditures/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Expenditure', 'FinanceReport'],
+    }),
   }),
 });
 
@@ -444,4 +463,9 @@ export const {
   useUpdatePrintSettingsMutation,
   useUploadPrintTemplateMutation,
   useRemovePrintTemplateMutation,
+  // Expenditure
+  useGetExpendituresQuery,
+  useCreateExpenditureMutation,
+  useUpdateExpenditureMutation,
+  useDeleteExpenditureMutation,
 } = financeApi;

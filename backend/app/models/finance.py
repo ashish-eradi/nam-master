@@ -129,6 +129,22 @@ class Concession(Base):
     approved_by = relationship("User", back_populates="approved_concessions")
     school = relationship("School", back_populates="concessions")
 
+class Expenditure(Base):
+    __tablename__ = "expenditures"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    school_id = Column(UUID(as_uuid=True), ForeignKey("schools.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    category = Column(String(100), nullable=False)
+    description = Column(String(500), nullable=False)
+    amount = Column(DECIMAL(10, 2), nullable=False)
+    payment_mode = Column(String(20), default='Cash')
+    notes = Column(Text)
+    recorded_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    school = relationship("School", back_populates="expenditures")
+    recorded_by = relationship("User", foreign_keys=[recorded_by_user_id])
+
 class Salary(Base):
     __tablename__ = "salaries"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

@@ -250,3 +250,40 @@ export interface BulkConcessionCreate {
   student_ids?: string[];
   class_ids?: string[];
 }
+
+export const EXPENDITURE_CATEGORIES = [
+  'Utilities', 'Maintenance & Repairs', 'Stationery & Supplies',
+  'Cleaning & Housekeeping', 'Transportation', 'Events & Celebrations',
+  'Kitchen & Canteen', 'Security', 'IT & Technology', 'Salary', 'Miscellaneous'
+];
+
+export interface Expenditure {
+  id: string;
+  school_id: string;
+  date: string;
+  category: string;
+  description: string;
+  amount: number;
+  payment_mode: string;
+  notes?: string;
+  recorded_by_user_id?: string;
+}
+
+export interface ExpenditureCreate {
+  date: string;
+  category: string;
+  description: string;
+  amount: number;
+  payment_mode: string;
+  notes?: string;
+  school_id: string;
+}
+
+export interface ExpenditureUpdate {
+  date?: string;
+  category?: string;
+  description?: string;
+  amount?: number;
+  payment_mode?: string;
+  notes?: string;
+}

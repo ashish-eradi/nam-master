@@ -4,8 +4,8 @@ from typing import List
 import uuid
 from decimal import Decimal
 from app.core.database import get_db
-from app.schemas.finance_schema import Fund, FundCreate, FundUpdate, Fee, FeeCreate, FeeUpdate, ClassFee, ClassFeeCreate, Payment, PaymentCreate, Concession, ConcessionCreate, Salary, SalaryCreate
-from app.models.finance import Fund as FundModel, Fee as FeeModel, ClassFee as ClassFeeModel, Payment as PaymentModel, Concession as ConcessionModel, Salary as SalaryModel, StudentFeeStructure as StudentFeeStructureModel
+from app.schemas.finance_schema import Fund, FundCreate, FundUpdate, Fee, FeeCreate, FeeUpdate, ClassFee, ClassFeeCreate, Payment, PaymentCreate, Concession, ConcessionCreate, Salary, SalaryCreate, Expenditure, ExpenditureCreate, ExpenditureUpdate
+from app.models.finance import Fund as FundModel, Fee as FeeModel, ClassFee as ClassFeeModel, Payment as PaymentModel, Concession as ConcessionModel, Salary as SalaryModel, StudentFeeStructure as StudentFeeStructureModel, Expenditure as ExpenditureModel
 from app.models.transport import StudentRouteFeeStructure as StudentRouteFeeStructureModel
 from app.models.hostel import StudentHostelFeeStructure as StudentHostelFeeStructureModel
 from app.api.deps import get_current_user_school, get_current_user
@@ -349,3 +349,78 @@ def delete_salary(salary_id: uuid.UUID, db: Session = Depends(get_db), school_id
     db.delete(db_salary)
     db.commit()
     return {"detail": "Salary record deleted successfully"}
+
+# --- Expenditure Endpoints ---
+
+@router.get("/expenditures", response_model=List[Expenditure], dependencies=[Depends(is_admin)])
+def read_expenditures(
+    start_date: str = None,
+    end_date: str = None,
+    category: str = None,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Retrieve expenditure records for the school."""
+    from datetime import date as date_type
+    query = tenant_aware_query(db, ExpenditureModel, school_id)
+    if start_date:
+        query = query.filter(ExpenditureModel.date >= start_date)
+    if end_date:
+        query = query.filter(ExpenditureModel.date <= end_date)
+    if category:
+        query = query.filter(ExpenditureModel.category == category)
+    return query.order_by(ExpenditureModel.date.desc()).all()
+
+@router.post("/expenditures", response_model=Expenditure, dependencies=[Depends(is_admin)])
+def create_expenditure(
+    expenditure: ExpenditureCreate,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school),
+    current_user: User = Depends(get_current_user)
+):
+    """Record a new expenditure."""
+    db_exp = ExpenditureModel(
+        school_id=expenditure.school_id,
+        date=expenditure.date,
+        category=expenditure.category,
+        description=expenditure.description,
+        amount=expenditure.amount,
+        payment_mode=expenditure.payment_mode,
+        notes=expenditure.notes,
+        recorded_by_user_id=current_user.id
+    )
+    db.add(db_exp)
+    db.commit()
+    db.refresh(db_exp)
+    return db_exp
+
+@router.put("/expenditures/{expenditure_id}", response_model=Expenditure, dependencies=[Depends(is_admin)])
+def update_expenditure(
+    expenditure_id: uuid.UUID,
+    expenditure: ExpenditureUpdate,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Update an expenditure record."""
+    db_exp = tenant_aware_query(db, ExpenditureModel, school_id).filter(ExpenditureModel.id == expenditure_id).first()
+    if not db_exp:
+        raise HTTPException(status_code=404, detail="Expenditure record not found")
+    for key, value in expenditure.model_dump(exclude_unset=True).items():
+        setattr(db_exp, key, value)
+    db.commit()
+    db.refresh(db_exp)
+    return db_exp
+
+@router.delete("/expenditures/{expenditure_id}", status_code=204, dependencies=[Depends(is_admin)])
+def delete_expenditure(
+    expenditure_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school)
+):
+    """Delete an expenditure record."""
+    db_exp = tenant_aware_query(db, ExpenditureModel, school_id).filter(ExpenditureModel.id == expenditure_id).first()
+    if not db_exp:
+        raise HTTPException(status_code=404, detail="Expenditure record not found")
+    db.delete(db_exp)
+    db.commit()
+    return {"detail": "Expenditure record deleted successfully"}

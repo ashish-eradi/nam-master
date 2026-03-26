@@ -129,9 +129,19 @@ class DailyExpenditureItem(BaseModel):
     payment_mode: str
     month: str
 
+class GeneralExpenditureItem(BaseModel):
+    id: str
+    category: str
+    description: str
+    amount: float
+    payment_mode: str
+    notes: Optional[str] = None
+
 class DailyExpenditure(BaseModel):
     date: date
     total_amount: float
     total_payments: int
     salaries: List[DailyExpenditureItem]
+    expenses: List[GeneralExpenditureItem]
     by_mode: dict
+    by_category: dict

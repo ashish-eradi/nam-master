@@ -7,7 +7,7 @@ from app.core.utils import tenant_aware_query
 from app.api.deps import get_current_user_school
 from app.models.attendance import Attendance
 from app.models.grade import Grade
-from app.models.finance import Payment as PaymentModel, Fund as FundModel, StudentFeeStructure as StudentFeeStructureModel, FeeInstallment as FeeInstallmentModel, Fee as FeeModel, PaymentDetail as PaymentDetailModel, Salary as SalaryModel, ClassFee as ClassFeeModel
+from app.models.finance import Payment as PaymentModel, Fund as FundModel, StudentFeeStructure as StudentFeeStructureModel, FeeInstallment as FeeInstallmentModel, Fee as FeeModel, PaymentDetail as PaymentDetailModel, Salary as SalaryModel, ClassFee as ClassFeeModel, Expenditure as ExpenditureModel
 from app.models.student import Student
 from app.models.user import User
 from app.models.class_model import Class as ClassModel
@@ -21,7 +21,7 @@ from app.schemas.report_schema import (
     ClassWiseCollection, ClassCollectionSummary,
     DailyCollection, DailyCollectionItem,
     InstallmentStatusSummary,
-    DailyExpenditure, DailyExpenditureItem
+    DailyExpenditure, DailyExpenditureItem, GeneralExpenditureItem
 )
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -832,16 +832,31 @@ def get_daily_expenditure(
         SalaryModel.school_id == school_id
     ).all()
 
-    total_amount = sum(Decimal(str(s.net_salary or 0)) for s in salaries)
-    total_payments = len(salaries)
+    # Also get general expenditures for this date
+    general_expenses = db.query(ExpenditureModel).filter(
+        ExpenditureModel.date == expenditure_date,
+        ExpenditureModel.school_id == school_id
+    ).all()
 
-    # Group by payment mode
-    by_mode = {}
+    salary_total = sum(Decimal(str(s.net_salary or 0)) for s in salaries)
+    expense_total = sum(Decimal(str(e.amount or 0)) for e in general_expenses)
+    total_amount = salary_total + expense_total
+    total_payments = len(salaries) + len(general_expenses)
+
+    # Group by payment mode (salaries + expenses combined)
+    by_mode: dict = {}
     for salary in salaries:
         mode = salary.payment_mode or 'Unknown'
-        if mode not in by_mode:
-            by_mode[mode] = 0
-        by_mode[mode] += float(salary.net_salary or 0)
+        by_mode[mode] = by_mode.get(mode, 0) + float(salary.net_salary or 0)
+    for expense in general_expenses:
+        mode = expense.payment_mode or 'Unknown'
+        by_mode[mode] = by_mode.get(mode, 0) + float(expense.amount or 0)
+
+    # Group expenses by category
+    by_category: dict = {}
+    for expense in general_expenses:
+        cat = expense.category or 'Miscellaneous'
+        by_category[cat] = by_category.get(cat, 0) + float(expense.amount or 0)
 
     # Create salary details list
     salary_details = []
@@ -849,7 +864,6 @@ def get_daily_expenditure(
         teacher = salary.teacher
         teacher_name = teacher.user.full_name if teacher and teacher.user else "Unknown"
         employee_id = teacher.employee_id if teacher else None
-
         salary_details.append(DailyExpenditureItem(
             teacher_name=teacher_name,
             employee_id=employee_id,
@@ -858,10 +872,24 @@ def get_daily_expenditure(
             month=salary.month or 'N/A'
         ))
 
+    expense_details = [
+        GeneralExpenditureItem(
+            id=str(e.id),
+            category=e.category,
+            description=e.description,
+            amount=float(e.amount),
+            payment_mode=e.payment_mode or 'Cash',
+            notes=e.notes
+        )
+        for e in general_expenses
+    ]
+
     return DailyExpenditure(
         date=expenditure_date,
         total_amount=float(total_amount),
         total_payments=total_payments,
         salaries=salary_details,
-        by_mode=by_mode
+        expenses=expense_details,
+        by_mode=by_mode,
+        by_category=by_category
     )

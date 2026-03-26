@@ -44,6 +44,7 @@ class School(Base):
     payments = relationship("Payment", back_populates="school")
     concessions = relationship("Concession", back_populates="school")
     salaries = relationship("Salary", back_populates="school")
+    expenditures = relationship("Expenditure", back_populates="school")
     exams = relationship("Exam", back_populates="school")
     exam_series = relationship("ExamSeries", back_populates="school")
     exam_timetables = relationship("ExamTimetable", back_populates="school")

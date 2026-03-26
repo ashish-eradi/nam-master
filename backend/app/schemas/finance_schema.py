@@ -297,3 +297,42 @@ class BulkClassFeeAssignment(BaseModel):
     academic_year: str
     create_installments: bool = False
     installment_type: Optional[str] = None
+
+# Expenditure schemas
+EXPENDITURE_CATEGORIES = [
+    'Utilities', 'Maintenance & Repairs', 'Stationery & Supplies',
+    'Cleaning & Housekeeping', 'Transportation', 'Events & Celebrations',
+    'Kitchen & Canteen', 'Security', 'IT & Technology', 'Salary',
+    'Miscellaneous'
+]
+
+class ExpenditureCreate(BaseModel):
+    date: date
+    category: str
+    description: str
+    amount: float
+    payment_mode: str = 'Cash'
+    notes: Optional[str] = None
+    school_id: uuid.UUID
+
+class ExpenditureUpdate(BaseModel):
+    date: Optional[date] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    amount: Optional[float] = None
+    payment_mode: Optional[str] = None
+    notes: Optional[str] = None
+
+class Expenditure(BaseModel):
+    id: uuid.UUID
+    school_id: uuid.UUID
+    date: date
+    category: str
+    description: str
+    amount: float
+    payment_mode: str
+    notes: Optional[str] = None
+    recorded_by_user_id: Optional[uuid.UUID] = None
+
+    class Config:
+        orm_mode = True
