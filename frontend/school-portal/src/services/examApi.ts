@@ -323,13 +323,13 @@ export const examApi = api.injectEndpoints({
     downloadReportCard: builder.query<Blob, { student_id: string; exam_series_id: string }>({
       query: ({ student_id, exam_series_id }) => ({
         url: `exams/report-cards/student/${student_id}/exam-series/${exam_series_id}/download`,
-        responseHandler: (response) => response.blob(),
+        responseHandler: (response) => response.ok ? response.blob() : response.json(),
       }),
     }),
     downloadClassReportCards: builder.query<Blob, { exam_series_id: string; class_id: string }>({
       query: ({ exam_series_id, class_id }) => ({
         url: `exams/report-cards/exam-series/${exam_series_id}/class/${class_id}/download-all`,
-        responseHandler: (response) => response.blob(),
+        responseHandler: (response) => response.ok ? response.blob() : response.json(),
       }),
     }),
   }),

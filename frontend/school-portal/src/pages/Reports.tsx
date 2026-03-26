@@ -78,8 +78,9 @@ const ReportCardsTab: React.FC = () => {
       const student = students?.find((s: any) => s.id === selectedStudent);
       triggerBlobDownload(blob, `report_card_${student?.admission_number || selectedStudent}.pdf`);
       message.success({ content: 'Report card downloaded', key });
-    } catch {
-      message.error({ content: 'Failed to download report card', key });
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.message || 'Failed to download report card';
+      message.error({ content: detail, key });
     }
   };
 
@@ -98,8 +99,9 @@ const ReportCardsTab: React.FC = () => {
       const cls = classes?.find((c: any) => c.id === selectedClass);
       triggerBlobDownload(blob, `report_cards_${cls?.name || 'class'}.pdf`);
       message.success({ content: 'Class report cards downloaded', key });
-    } catch {
-      message.error({ content: 'Failed to download class report cards', key });
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.message || 'Failed to download class report cards';
+      message.error({ content: detail, key });
     }
   };
 
@@ -248,8 +250,9 @@ const AnnualReportTab: React.FC = () => {
       const student = students?.find((s: any) => s.id === selectedStudent);
       triggerBlobDownload(blob, `annual_report_${student?.admission_number || selectedStudent}_${selectedAcYear}.pdf`);
       message.success({ content: 'Annual report downloaded', key });
-    } catch {
-      message.error({ content: 'Failed to download annual report', key });
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.message || 'Failed to download annual report';
+      message.error({ content: detail, key });
     }
   };
 
@@ -268,8 +271,9 @@ const AnnualReportTab: React.FC = () => {
       const cls = classes?.find((c: any) => c.id === selectedClass);
       triggerBlobDownload(blob, `annual_reports_${cls?.name || 'class'}_${selectedAcYear}.pdf`);
       message.success({ content: 'Class annual reports downloaded', key });
-    } catch {
-      message.error({ content: 'Failed to download class annual reports', key });
+    } catch (err: any) {
+      const detail = err?.data?.detail || err?.message || 'Failed to download class annual reports';
+      message.error({ content: detail, key });
     }
   };
 

@@ -56,13 +56,13 @@ export const reportsApi = api.injectEndpoints({
     downloadStudentAnnualReport: builder.query<Blob, { student_id: string; academic_year: string }>({
       query: ({ student_id, academic_year }) => ({
         url: `reports/annual-report/student/${student_id}/download?academic_year=${academic_year}`,
-        responseHandler: (response) => response.blob(),
+        responseHandler: (response) => response.ok ? response.blob() : response.json(),
       }),
     }),
     downloadClassAnnualReports: builder.query<Blob, { class_id: string; academic_year: string }>({
       query: ({ class_id, academic_year }) => ({
         url: `reports/annual-report/class/${class_id}/download-all?academic_year=${academic_year}`,
-        responseHandler: (response) => response.blob(),
+        responseHandler: (response) => response.ok ? response.blob() : response.json(),
       }),
     }),
   }),
