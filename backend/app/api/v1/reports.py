@@ -1064,7 +1064,12 @@ def download_student_annual_report(
     from app.models.school import School as SchoolModel
     from app.services.report_card_service import ReportCardService
 
-    data = get_student_annual_report(student_id, academic_year, db, school_id)
+    try:
+        data = get_student_annual_report(student_id, academic_year, db, school_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Data fetch failed: {str(e)}")
 
     school = db.query(SchoolModel).filter(
         SchoolModel.id == uuid.UUID(school_id) if not isinstance(school_id, uuid.UUID) else school_id
