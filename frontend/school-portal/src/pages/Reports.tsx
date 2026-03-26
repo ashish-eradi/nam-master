@@ -18,7 +18,7 @@ import {
   useGetMonthlyAttendanceOverviewQuery,
 } from '../services/attendanceApi';
 import { useGetExamSeriesQuery, useLazyDownloadReportCardQuery, useLazyDownloadClassReportCardsQuery } from '../services/examApi';
-import { useLazyDownloadStudentAnnualReportQuery, useLazyDownloadClassAnnualReportsQuery } from '../services/reportsApi';
+
 import moment from 'moment';
 import type { Moment } from 'moment';
 
@@ -230,9 +230,6 @@ const AnnualReportTab: React.FC = () => {
   const { data: classes } = useGetClassesQuery();
   const { data: students } = useGetStudentsQuery();
 
-  const [triggerDownloadStudent] = useLazyDownloadStudentAnnualReportQuery();
-  const [triggerDownloadClass] = useLazyDownloadClassAnnualReportsQuery();
-
   const classStudents = students?.filter((s: any) => s.class_id === selectedClass) || [];
 
   const handleDownloadStudent = async () => {
@@ -243,16 +240,22 @@ const AnnualReportTab: React.FC = () => {
     const key = 'dla';
     message.loading({ content: 'Generating annual report...', key });
     try {
-      const blob = await triggerDownloadStudent({
-        student_id: selectedStudent,
-        academic_year: selectedAcYear,
-      }).unwrap();
+      const apiBase = getApiBaseUrl();
+      const resp = await fetch(
+        `${apiBase}/reports/annual-report/student/${selectedStudent}/download?academic_year=${selectedAcYear}`,
+        { credentials: 'include' }
+      );
+      if (!resp.ok) {
+        let detail = `HTTP ${resp.status}`;
+        try { const j = await resp.json(); detail = j?.detail || detail; } catch {}
+        throw new Error(detail);
+      }
+      const blob = await resp.blob();
       const student = students?.find((s: any) => s.id === selectedStudent);
       triggerBlobDownload(blob, `annual_report_${student?.admission_number || selectedStudent}_${selectedAcYear}.pdf`);
       message.success({ content: 'Annual report downloaded', key });
     } catch (err: any) {
-      const detail = err?.data?.detail || err?.message || 'Failed to download annual report';
-      message.error({ content: detail, key });
+      message.error({ content: err.message || 'Failed to download annual report', key });
     }
   };
 
@@ -264,16 +267,22 @@ const AnnualReportTab: React.FC = () => {
     const key = 'dlac';
     message.loading({ content: 'Generating annual reports for class...', key });
     try {
-      const blob = await triggerDownloadClass({
-        class_id: selectedClass,
-        academic_year: selectedAcYear,
-      }).unwrap();
+      const apiBase = getApiBaseUrl();
+      const resp = await fetch(
+        `${apiBase}/reports/annual-report/class/${selectedClass}/download-all?academic_year=${selectedAcYear}`,
+        { credentials: 'include' }
+      );
+      if (!resp.ok) {
+        let detail = `HTTP ${resp.status}`;
+        try { const j = await resp.json(); detail = j?.detail || detail; } catch {}
+        throw new Error(detail);
+      }
+      const blob = await resp.blob();
       const cls = classes?.find((c: any) => c.id === selectedClass);
       triggerBlobDownload(blob, `annual_reports_${cls?.name || 'class'}_${selectedAcYear}.pdf`);
       message.success({ content: 'Class annual reports downloaded', key });
     } catch (err: any) {
-      const detail = err?.data?.detail || err?.message || 'Failed to download class annual reports';
-      message.error({ content: detail, key });
+      message.error({ content: err.message || 'Failed to download class annual reports', key });
     }
   };
 
