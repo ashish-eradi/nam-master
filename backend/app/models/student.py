@@ -46,3 +46,4 @@ class Student(Base):
     hostel_fee_structures = relationship("StudentHostelFeeStructure", back_populates="student")
     miscellaneous_fee_structures = relationship("StudentMiscellaneousFeeStructure", back_populates="student")
     exam_marks = relationship("StudentExamMarks", back_populates="student")
+    sms_notifications = relationship("SMSNotification", back_populates="student")

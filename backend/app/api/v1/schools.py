@@ -85,11 +85,6 @@ def deactivate_school(school_id: uuid.UUID, db: Session = Depends(get_db)):
     db.refresh(db_school)
     return db_school
 
-from pydantic import BaseModel
-
-class SMSApiKeyUpdate(BaseModel):
-    sms_api_key: str
-
 @router.post("/{school_id}/set-offline", response_model=School, dependencies=[Depends(is_superadmin)])
 def set_school_offline(school_id: uuid.UUID, db: Session = Depends(get_db)):
     """Mark a school as using the offline desktop app."""
@@ -111,18 +106,6 @@ def set_school_online(school_id: uuid.UUID, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_school)
     return db_school
-
-@router.put("/{school_id}/sms-api-key", response_model=School, dependencies=[Depends(is_superadmin)])
-def update_school_sms_api_key(school_id: uuid.UUID, api_key_update: SMSApiKeyUpdate, db: Session = Depends(get_db)):
-    """Update the SMS API key for a school - only accessible by superadmin"""
-    db_school = db.query(SchoolModel).filter(SchoolModel.id == school_id).first()
-    if db_school is None:
-        raise HTTPException(status_code=404, detail="School not found")
-    db_school.sms_api_key = api_key_update.sms_api_key
-    db.commit()
-    db.refresh(db_school)
-    return db_school
-
 
 @router.post("/{school_id}/logo", response_model=School, dependencies=[Depends(is_superadmin)])
 async def upload_school_logo(school_id: uuid.UUID, file: UploadFile = File(...), db: Session = Depends(get_db)):

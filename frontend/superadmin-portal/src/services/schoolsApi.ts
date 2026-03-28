@@ -70,14 +70,6 @@ export const schoolsApi = api.injectEndpoints({
       }),
       invalidatesTags: (result) => result ? [{ type: 'School', id: result.id }, { type: 'School', id: 'LIST' }] : [],
     }),
-    updateSchoolSmsApiKey: builder.mutation<School, { id: string; sms_api_key: string }>({
-      query: ({ id, sms_api_key }) => ({
-        url: `schools/${id}/sms-api-key`,
-        method: 'PUT',
-        body: { sms_api_key },
-      }),
-      invalidatesTags: (result) => result ? [{ type: 'School', id: result.id }, { type: 'School', id: 'LIST' }] : [],
-    }),
     setSchoolOffline: builder.mutation<School, string>({
       query: (id) => ({ url: `schools/${id}/set-offline`, method: 'POST' }),
       invalidatesTags: (result) => result ? [{ type: 'School', id: result.id }, { type: 'School', id: 'LIST' }] : [],
@@ -104,7 +96,6 @@ export const {
   useDeleteSchoolMutation,
   useActivateSchoolMutation,
   useDeactivateSchoolMutation,
-  useUpdateSchoolSmsApiKeyMutation,
   useSetSchoolOfflineMutation,
   useSetSchoolOnlineMutation,
   useUploadSchoolLogoMutation,

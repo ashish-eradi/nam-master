@@ -61,7 +61,7 @@ const Sidebar: React.FC = () => {
     if (path === '/hostel') return '14';
     if (path === '/print-settings') return '24';
     if (path === '/certificates') return '21';
-    if (path === '/sms-notifications') return '22';
+    if (path === '/whatsapp') return '22';
     return '1';
   };
 
@@ -167,7 +167,7 @@ const Sidebar: React.FC = () => {
     {
       key: '22',
       icon: <MessageOutlined />,
-      label: <Link to="/sms-notifications">SMS Notifications</Link>,
+      label: <Link to="/whatsapp">WhatsApp Messaging</Link>,
     },
     {
       key: '21',

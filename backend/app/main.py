@@ -39,7 +39,7 @@ async def log_requests(request: Request, call_next):
     if "application/json" in content_type:
         try:
             body = await request.json()
-            _REDACT_KEYS = {"password", "password_hash", "token", "access_token", "refresh_token", "sms_api_key", "api_key"}
+            _REDACT_KEYS = {"password", "password_hash", "token", "access_token", "refresh_token", "sms_api_key", "api_key", "auth_token", "account_sid"}
             if isinstance(body, dict):
                 body = {k: ("***" if k in _REDACT_KEYS else v) for k, v in body.items()}
             logger.info(f"Request body: {body}")
@@ -56,7 +56,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": exc.errors()},
     )
 
-from app.api.v1 import auth, schools, students, classes, subjects, attendance, finance, finance_extended, exams, announcements, messages, parents, library, transport, hostel, timetable, reports, dashboard, teachers, uploads, calendar, audit_logs, backups, role_dashboards, bulk_operations, licenses, miscellaneous
+from app.api.v1 import auth, schools, students, classes, subjects, attendance, finance, finance_extended, exams, announcements, messages, parents, library, transport, hostel, timetable, reports, dashboard, teachers, uploads, calendar, audit_logs, backups, role_dashboards, bulk_operations, licenses, miscellaneous, notifications, whatsapp_webhook
 from app.api.v1 import users
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
@@ -87,6 +87,8 @@ app.include_router(backups.router, prefix="/api/v1/backups", tags=["backups"])
 app.include_router(role_dashboards.router, prefix="/api/v1/role-dashboards", tags=["role-dashboards"])
 app.include_router(bulk_operations.router, prefix="/api/v1/bulk-operations", tags=["bulk-operations"])
 app.include_router(licenses.router, prefix="/api/v1/licenses", tags=["licenses"])
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
+app.include_router(whatsapp_webhook.router, prefix="/api/v1/webhook", tags=["webhook"])
 
 UPLOAD_DIR = Path("/app/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

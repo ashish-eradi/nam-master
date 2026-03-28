@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     # Fernet key for backup encryption — generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     # If not set, backups are stored unencrypted (acceptable in dev, not recommended in production)
     BACKUP_ENCRYPTION_KEY: str = ""
+    # WhatsApp Business Cloud API (Meta) — set these in .env
+    # WHATSAPP_WEBHOOK_VERIFY_TOKEN: choose any secret string, register it in Meta App Dashboard → Webhooks
+    WHATSAPP_WEBHOOK_VERIFY_TOKEN: str = ""
+    # WHATSAPP_APP_SECRET: from Meta App Dashboard → App Settings → Basic → App Secret
+    # Used to verify X-Hub-Signature-256 on incoming webhook POSTs
+    WHATSAPP_APP_SECRET: str = ""
 
     class Config:
         env_file = ".env"

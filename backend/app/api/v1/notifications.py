@@ -2,21 +2,23 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 from typing import List, Optional
 import uuid
-import httpx
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
 from app.core.database import get_db
 from app.schemas.notification_schema import (
-    SMSTemplate, SMSTemplateCreate, SMSTemplateUpdate,
-    SMSNotification, SMSNotificationCreate,
-    SendSMSRequest, BulkSMSRequest, SMSSendResponse,
-    NotificationType, SMSNotificationWithStudent
+    WhatsAppTemplate, WhatsAppTemplateCreate, WhatsAppTemplateUpdate,
+    WhatsAppNotification, WhatsAppNotificationWithStudent,
+    WhatsAppCredentialCreate, WhatsAppCredentialResponse,
+    SendWhatsAppRequest, BulkWhatsAppRequest, WhatsAppSendResponse,
+    NotificationType,
 )
 from app.models.notification import (
-    SMSTemplate as SMSTemplateModel,
-    SMSNotification as SMSNotificationModel
+    SMSTemplate as WhatsAppTemplateModel,
+    SMSNotification as WhatsAppNotificationModel,
+    WhatsAppCredential as WhatsAppCredentialModel,
 )
 from app.models.student import Student as StudentModel
 from app.models.class_model import Class as ClassModel
@@ -24,404 +26,491 @@ from app.models.school import School as SchoolModel
 from app.api.deps import get_current_user_school, get_current_user
 from app.models.user import User
 from app.core.utils import tenant_aware_query
-from app.core.permissions import is_admin, is_admin_or_superadmin, is_admin_or_teacher
+from app.core.permissions import is_admin
+from app.services.whatsapp_service import WhatsAppService, WhatsAppSendError
 
 router = APIRouter()
 
-def ensure_uuid(value):
-    """Convert to UUID if string, otherwise return as-is"""
-    return value if isinstance(value, uuid.UUID) else uuid.UUID(value)
 
-def get_school_sms_api_key(db: Session, school_id: str) -> Optional[str]:
-    """Get the SMS API key for a school."""
-    school_uuid = ensure_uuid(school_id)
-    school = db.query(SchoolModel).filter(SchoolModel.id == school_uuid).first()
-    if school:
-        return school.sms_api_key
-    return None
+def _ensure_uuid(value):
+    return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
 
-def _dispatch_sms(phone: str, message: str, api_key: str) -> str:
-    """
-    Send an SMS via MSG91 (https://msg91.com).
-    Returns 'sent' on success, 'failed' on error.
-    The api_key stored on the School record should be a MSG91 authkey.
-    To switch providers, only this function needs to change.
-    """
-    try:
-        payload = {
-            "sender": "SCHOOL",
-            "route": "4",
-            "country": "91",
-            "sms": [{"message": message, "to": [phone]}],
-        }
-        headers = {"authkey": api_key, "Content-Type": "application/json"}
-        response = httpx.post(
-            "https://api.msg91.com/api/v2/sendsms",
-            json=payload,
-            headers=headers,
-            timeout=10,
+
+def _get_credential(db: Session, school_id) -> WhatsAppCredentialModel:
+    """Return active WABA credential for the school or raise 400."""
+    cred = db.query(WhatsAppCredentialModel).filter(
+        WhatsAppCredentialModel.school_id == _ensure_uuid(school_id),
+        WhatsAppCredentialModel.is_active == True,
+    ).first()
+    if not cred:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "WhatsApp is not connected for this school. "
+                "Go to Settings → WhatsApp to complete the Embedded Signup."
+            ),
         )
-        response.raise_for_status()
-        logger.info(f"SMS dispatched to {phone}: HTTP {response.status_code}")
-        return "sent"
-    except Exception as exc:
-        logger.error(f"SMS dispatch failed for {phone}: {exc}")
-        raise
+    return cred
 
-# ===== SMS Template Endpoints =====
 
-@router.get("/sms/templates", response_model=List[SMSTemplate], dependencies=[Depends(is_admin)])
-def list_sms_templates(
+def _resolve_send_args(
+    cred: WhatsAppCredentialModel,
+    db: Session,
+    school_id,
+    template_id: Optional[uuid.UUID],
+    message: Optional[str],
+    meta_template_name: Optional[str],
+    meta_template_language: str,
+    meta_template_params: List[str],
+    recipient_phone: str,
+    recipient_vars: dict,
+    recipient_meta_params: List[str],
+) -> dict:
+    """
+    Resolve what to send for one recipient and call the appropriate
+    WhatsAppService method.  Returns {"wamid": str, "rendered_message": str}.
+    """
+    local_template_body: Optional[str] = None
+
+    if template_id:
+        tmpl = tenant_aware_query(db, WhatsAppTemplateModel, school_id).filter(
+            WhatsAppTemplateModel.id == template_id,
+            WhatsAppTemplateModel.is_active == True,
+        ).first()
+        if not tmpl:
+            raise HTTPException(status_code=404, detail="Template not found or inactive")
+        # Prefer Meta template name from the template record if not overridden by request
+        if not meta_template_name and tmpl.meta_template_name:
+            meta_template_name = tmpl.meta_template_name
+            meta_template_language = tmpl.meta_template_language or meta_template_language
+        local_template_body = tmpl.message_template
+
+    # Render local template placeholders for the log message
+    rendered = local_template_body or message or ""
+    if recipient_vars:
+        for key, value in recipient_vars.items():
+            rendered = rendered.replace(f"{{{{{key}}}}}", str(value))
+
+    # Determine positional params: per-recipient overrides shared params
+    body_params = recipient_meta_params or meta_template_params or None
+
+    if meta_template_name:
+        wamid = WhatsAppService.send_template(
+            phone_number_id=cred.phone_number_id,
+            access_token=cred.access_token,
+            to=recipient_phone,
+            template_name=meta_template_name,
+            language_code=meta_template_language or "en",
+            body_params=body_params if body_params else None,
+        )
+    else:
+        if not rendered:
+            raise HTTPException(status_code=400, detail="message or template_id is required")
+        wamid = WhatsAppService.send_text(
+            phone_number_id=cred.phone_number_id,
+            access_token=cred.access_token,
+            to=recipient_phone,
+            body=rendered,
+        )
+
+    return {"wamid": wamid, "rendered_message": rendered}
+
+
+# ─────────────────────────────────────────────────────────────
+# WABA Credential Endpoints
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/whatsapp/credentials", response_model=WhatsAppCredentialResponse, dependencies=[Depends(is_admin)])
+def save_whatsapp_credentials(
+    payload: WhatsAppCredentialCreate,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school),
+):
+    """
+    Store (or update) the WABA credentials returned by the Embedded Signup flow.
+    Call this once after the school admin completes Embedded Signup on the frontend.
+    """
+    school_uuid = _ensure_uuid(school_id)
+    cred = db.query(WhatsAppCredentialModel).filter(
+        WhatsAppCredentialModel.school_id == school_uuid
+    ).first()
+
+    if cred:
+        cred.phone_number_id = payload.phone_number_id
+        cred.waba_id = payload.waba_id
+        cred.access_token = payload.access_token
+        cred.display_name = payload.display_name
+        cred.is_active = True
+        cred.connected_at = datetime.now(timezone.utc)
+    else:
+        cred = WhatsAppCredentialModel(
+            school_id=school_uuid,
+            phone_number_id=payload.phone_number_id,
+            waba_id=payload.waba_id,
+            access_token=payload.access_token,
+            display_name=payload.display_name,
+            is_active=True,
+        )
+        db.add(cred)
+
+    db.commit()
+    db.refresh(cred)
+    return cred
+
+
+@router.get("/whatsapp/credentials", response_model=WhatsAppCredentialResponse, dependencies=[Depends(is_admin)])
+def get_whatsapp_credentials(
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school),
+):
+    """Return current WABA connection status. access_token is never returned."""
+    cred = db.query(WhatsAppCredentialModel).filter(
+        WhatsAppCredentialModel.school_id == _ensure_uuid(school_id)
+    ).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail="WhatsApp not connected")
+    return cred
+
+
+@router.delete("/whatsapp/credentials", status_code=204, dependencies=[Depends(is_admin)])
+def disconnect_whatsapp(
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school),
+):
+    """Deactivate the WABA connection for this school."""
+    cred = db.query(WhatsAppCredentialModel).filter(
+        WhatsAppCredentialModel.school_id == _ensure_uuid(school_id)
+    ).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail="WhatsApp not connected")
+    cred.is_active = False
+    db.commit()
+
+
+# ─────────────────────────────────────────────────────────────
+# Template Endpoints
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/whatsapp/templates", response_model=List[WhatsAppTemplate], dependencies=[Depends(is_admin)])
+def list_whatsapp_templates(
     notification_type: Optional[str] = None,
     is_active: Optional[bool] = None,
     db: Session = Depends(get_db),
-    school_id: str = Depends(get_current_user_school)
+    school_id: str = Depends(get_current_user_school),
 ):
-    """List all SMS templates for the school."""
-    query = tenant_aware_query(db, SMSTemplateModel, school_id)
-
+    query = tenant_aware_query(db, WhatsAppTemplateModel, school_id)
     if notification_type:
-        query = query.filter(SMSTemplateModel.notification_type == notification_type)
-
+        query = query.filter(WhatsAppTemplateModel.notification_type == notification_type)
     if is_active is not None:
-        query = query.filter(SMSTemplateModel.is_active == is_active)
+        query = query.filter(WhatsAppTemplateModel.is_active == is_active)
+    return query.order_by(WhatsAppTemplateModel.created_at.desc()).all()
 
-    return query.order_by(SMSTemplateModel.created_at.desc()).all()
 
-@router.post("/sms/templates", response_model=SMSTemplate, dependencies=[Depends(is_admin)])
-def create_sms_template(
-    template: SMSTemplateCreate,
+@router.post("/whatsapp/templates", response_model=WhatsAppTemplate, dependencies=[Depends(is_admin)])
+def create_whatsapp_template(
+    template: WhatsAppTemplateCreate,
     db: Session = Depends(get_db),
     school_id: str = Depends(get_current_user_school),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    """Create a new SMS template."""
-    school_uuid = ensure_uuid(school_id)
-    if template.school_id != school_uuid:
-        raise HTTPException(status_code=403, detail="Cannot create template for another school")
-
-    db_template = SMSTemplateModel(
+    school_uuid = _ensure_uuid(school_id)
+    db_template = WhatsAppTemplateModel(
         **template.model_dump(),
-        created_by_user_id=current_user.id
+        school_id=school_uuid,
+        created_by_user_id=current_user.id,
     )
     db.add(db_template)
     db.commit()
     db.refresh(db_template)
     return db_template
 
-@router.put("/sms/templates/{template_id}", response_model=SMSTemplate, dependencies=[Depends(is_admin)])
-def update_sms_template(
-    template_id: uuid.UUID,
-    template: SMSTemplateUpdate,
-    db: Session = Depends(get_db),
-    school_id: str = Depends(get_current_user_school)
-):
-    """Update an existing SMS template."""
-    db_template = tenant_aware_query(db, SMSTemplateModel, school_id).filter(
-        SMSTemplateModel.id == template_id
-    ).first()
 
+@router.put("/whatsapp/templates/{template_id}", response_model=WhatsAppTemplate, dependencies=[Depends(is_admin)])
+def update_whatsapp_template(
+    template_id: uuid.UUID,
+    template: WhatsAppTemplateUpdate,
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school),
+):
+    db_template = tenant_aware_query(db, WhatsAppTemplateModel, school_id).filter(
+        WhatsAppTemplateModel.id == template_id
+    ).first()
     if not db_template:
         raise HTTPException(status_code=404, detail="Template not found")
 
-    update_data = template.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
+    for key, value in template.model_dump(exclude_unset=True).items():
         setattr(db_template, key, value)
-
     db.commit()
     db.refresh(db_template)
     return db_template
 
-@router.delete("/sms/templates/{template_id}", status_code=204, dependencies=[Depends(is_admin)])
-def delete_sms_template(
+
+@router.delete("/whatsapp/templates/{template_id}", status_code=204, dependencies=[Depends(is_admin)])
+def delete_whatsapp_template(
     template_id: uuid.UUID,
     db: Session = Depends(get_db),
-    school_id: str = Depends(get_current_user_school)
+    school_id: str = Depends(get_current_user_school),
 ):
-    """Delete an SMS template."""
-    db_template = tenant_aware_query(db, SMSTemplateModel, school_id).filter(
-        SMSTemplateModel.id == template_id
+    db_template = tenant_aware_query(db, WhatsAppTemplateModel, school_id).filter(
+        WhatsAppTemplateModel.id == template_id
     ).first()
-
     if not db_template:
         raise HTTPException(status_code=404, detail="Template not found")
-
     db.delete(db_template)
     db.commit()
-    return {"detail": "Template deleted successfully"}
 
-# ===== SMS Sending Endpoints =====
 
-@router.post("/sms/send", response_model=SMSSendResponse, dependencies=[Depends(is_admin)])
-def send_sms(
-    sms_request: SendSMSRequest,
+# ─────────────────────────────────────────────────────────────
+# Send Endpoints
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/whatsapp/send", response_model=WhatsAppSendResponse, dependencies=[Depends(is_admin)])
+def send_whatsapp(
+    request: SendWhatsAppRequest,
     db: Session = Depends(get_db),
     school_id: str = Depends(get_current_user_school),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    """
-    Send SMS to specific recipients.
-    This is a basic implementation that logs SMS without actually sending.
-    Integrate with Twilio, MSG91, or other SMS gateway for actual sending.
-    """
-    school_uuid = ensure_uuid(school_id)
-    if sms_request.school_id != school_uuid:
-        raise HTTPException(status_code=403, detail="Cannot send SMS for another school")
+    """Send a WhatsApp message to one or more specific recipients."""
+    school_uuid = _ensure_uuid(school_id)
+    if request.school_id != school_uuid:
+        raise HTTPException(status_code=403, detail="Cannot send messages for another school")
 
-    # Get school's SMS API key
-    sms_api_key = get_school_sms_api_key(db, school_id)
-    if not sms_api_key:
-        raise HTTPException(
-            status_code=400,
-            detail="SMS API key not configured for this school. Please contact the administrator."
-        )
-
-    # Get message (either direct or from template)
-    message_template = sms_request.message
-
-    if sms_request.template_id:
-        template = tenant_aware_query(db, SMSTemplateModel, school_id).filter(
-            SMSTemplateModel.id == sms_request.template_id,
-            SMSTemplateModel.is_active == True
-        ).first()
-
-        if not template:
-            raise HTTPException(status_code=404, detail="Template not found or inactive")
-
-        message_template = template.message_template
-
-    if not message_template:
-        raise HTTPException(status_code=400, detail="Message or template_id is required")
+    cred = _get_credential(db, school_id)
 
     sent_count = 0
     failed_count = 0
-    failed_numbers = []
+    failed_numbers: List[str] = []
 
-    for recipient in sms_request.recipients:
+    for recipient in request.recipients:
+        wamid: Optional[str] = None
+        rendered_msg = ""
+        status = "failed"
+        error_msg: Optional[str] = None
+
         try:
-            # Replace variables in template
-            message = message_template
-            if recipient.variables:
-                for key, value in recipient.variables.items():
-                    message = message.replace(f"{{{{{key}}}}}", str(value))
-
-            # Dispatch SMS via provider
-            sms_status = _dispatch_sms(recipient.phone, message, sms_api_key)
-
-            # Record result
-            sms_notification = SMSNotificationModel(
-                school_id=sms_request.school_id,
+            result = _resolve_send_args(
+                cred=cred,
+                db=db,
+                school_id=school_id,
+                template_id=request.template_id,
+                message=request.message,
+                meta_template_name=request.meta_template_name,
+                meta_template_language=request.meta_template_language or "en",
+                meta_template_params=request.meta_template_params or [],
                 recipient_phone=recipient.phone,
-                recipient_name=recipient.name,
-                student_id=recipient.student_id,
-                message=message,
-                notification_type=sms_request.notification_type.value,
-                status=sms_status,
-                sent_by_user_id=current_user.id,
-                sent_at=datetime.now()
+                recipient_vars=recipient.variables or {},
+                recipient_meta_params=recipient.meta_template_params or [],
             )
-            db.add(sms_notification)
+            wamid = result["wamid"]
+            rendered_msg = result["rendered_message"]
+            status = "sent"
             sent_count += 1
-
-        except Exception as e:
+        except WhatsAppSendError as exc:
+            error_msg = str(exc)
             failed_count += 1
             failed_numbers.append(recipient.phone)
+            logger.warning("WhatsApp send failed for %s: %s", recipient.phone, exc)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            error_msg = str(exc)
+            failed_count += 1
+            failed_numbers.append(recipient.phone)
+            logger.error("Unexpected error sending WhatsApp to %s: %s", recipient.phone, exc)
 
-            # Log failed SMS
-            sms_notification = SMSNotificationModel(
-                school_id=sms_request.school_id,
-                recipient_phone=recipient.phone,
-                recipient_name=recipient.name,
-                student_id=recipient.student_id,
-                message=message,
-                notification_type=sms_request.notification_type.value,
-                status="failed",
-                error_message=str(e),
-                sent_by_user_id=current_user.id
-            )
-            db.add(sms_notification)
+        db.add(WhatsAppNotificationModel(
+            school_id=request.school_id,
+            recipient_phone=recipient.phone,
+            recipient_name=recipient.name,
+            student_id=recipient.student_id,
+            message=rendered_msg,
+            notification_type=request.notification_type.value,
+            status=status,
+            meta_message_id=wamid,
+            error_message=error_msg,
+            sent_by_user_id=current_user.id,
+            sent_at=datetime.now(timezone.utc) if status == "sent" else None,
+        ))
 
     db.commit()
-
-    return SMSSendResponse(
+    return WhatsAppSendResponse(
         total_sent=sent_count,
         total_failed=failed_count,
         failed_numbers=failed_numbers,
-        message=f"SMS sent successfully to {sent_count} recipients. {failed_count} failed."
+        message=f"Sent {sent_count} messages. {failed_count} failed.",
     )
 
-@router.post("/sms/send-bulk", response_model=SMSSendResponse, dependencies=[Depends(is_admin)])
-def send_bulk_sms(
-    bulk_request: BulkSMSRequest,
+
+@router.post("/whatsapp/send-bulk", response_model=WhatsAppSendResponse, dependencies=[Depends(is_admin)])
+def send_bulk_whatsapp(
+    request: BulkWhatsAppRequest,
     db: Session = Depends(get_db),
     school_id: str = Depends(get_current_user_school),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Send bulk SMS to all students in a class or all students in school.
+    Send a WhatsApp message to all students in a class (or whole school).
+    Uses the student's mobile_number. Skips students with no phone on record.
     """
-    school_uuid = ensure_uuid(school_id)
-    if bulk_request.school_id != school_uuid:
-        raise HTTPException(status_code=403, detail="Cannot send SMS for another school")
+    school_uuid = _ensure_uuid(school_id)
+    if request.school_id != school_uuid:
+        raise HTTPException(status_code=403, detail="Cannot send messages for another school")
 
-    # Get school's SMS API key
-    sms_api_key = get_school_sms_api_key(db, school_id)
-    if not sms_api_key:
-        raise HTTPException(
-            status_code=400,
-            detail="SMS API key not configured for this school. Please contact the administrator."
-        )
+    cred = _get_credential(db, school_id)
 
-    # Get message
-    message_template = bulk_request.message
-
-    if bulk_request.template_id:
-        template = tenant_aware_query(db, SMSTemplateModel, school_id).filter(
-            SMSTemplateModel.id == bulk_request.template_id,
-            SMSTemplateModel.is_active == True
-        ).first()
-
-        if not template:
-            raise HTTPException(status_code=404, detail="Template not found or inactive")
-
-        message_template = template.message_template
-
-    if not message_template:
-        raise HTTPException(status_code=400, detail="Message or template_id is required")
-
-    # Get students
     query = tenant_aware_query(db, StudentModel, school_id)
-
-    if bulk_request.class_id:
-        query = query.filter(StudentModel.class_id == bulk_request.class_id)
-
+    if request.class_id:
+        query = query.filter(StudentModel.class_id == request.class_id)
     students = query.all()
 
     if not students:
-        raise HTTPException(status_code=404, detail="No students found")
+        raise HTTPException(status_code=404, detail="No students found for the selected target")
+
+    # Resolve the template once outside the loop
+    local_template_body: Optional[str] = request.message
+    meta_template_name = request.meta_template_name
+    meta_template_language = request.meta_template_language or "en"
+
+    if request.template_id:
+        tmpl = tenant_aware_query(db, WhatsAppTemplateModel, school_id).filter(
+            WhatsAppTemplateModel.id == request.template_id,
+            WhatsAppTemplateModel.is_active == True,
+        ).first()
+        if not tmpl:
+            raise HTTPException(status_code=404, detail="Template not found or inactive")
+        local_template_body = tmpl.message_template
+        if not meta_template_name and tmpl.meta_template_name:
+            meta_template_name = tmpl.meta_template_name
+            meta_template_language = tmpl.meta_template_language or meta_template_language
+
+    if not meta_template_name and not local_template_body:
+        raise HTTPException(status_code=400, detail="message or template_id is required")
 
     sent_count = 0
     failed_count = 0
-    failed_numbers = []
+    failed_numbers: List[str] = []
 
     for student in students:
-        if not student.mobile_number:
+        phone = getattr(student, "mobile_number", None)
+        if not phone:
             continue
 
+        # Substitute common student variables in the local template
+        rendered = local_template_body or ""
+        rendered = rendered.replace("{{student_name}}", f"{student.first_name} {student.last_name}")
+        rendered = rendered.replace("{{admission_number}}", student.admission_number or "")
+
+        wamid: Optional[str] = None
+        status = "failed"
+        error_msg: Optional[str] = None
+
         try:
-            # Replace student-specific variables in template
-            message = message_template.replace("{{student_name}}", f"{student.first_name} {student.last_name}")
-            message = message.replace("{{admission_number}}", student.admission_number)
-
-            # Dispatch SMS via provider
-            sms_status = _dispatch_sms(student.mobile_number, message, sms_api_key)
-
-            # Record result
-            sms_notification = SMSNotificationModel(
-                school_id=bulk_request.school_id,
-                recipient_phone=student.mobile_number,
-                recipient_name=f"{student.first_name} {student.last_name}",
-                student_id=student.id,
-                message=message,
-                notification_type=bulk_request.notification_type.value,
-                status=sms_status,
-                sent_by_user_id=current_user.id,
-                sent_at=datetime.now()
-            )
-            db.add(sms_notification)
+            if meta_template_name:
+                body_params = request.meta_template_params or None
+                wamid = WhatsAppService.send_template(
+                    phone_number_id=cred.phone_number_id,
+                    access_token=cred.access_token,
+                    to=phone,
+                    template_name=meta_template_name,
+                    language_code=meta_template_language,
+                    body_params=body_params,
+                )
+            else:
+                wamid = WhatsAppService.send_text(
+                    phone_number_id=cred.phone_number_id,
+                    access_token=cred.access_token,
+                    to=phone,
+                    body=rendered,
+                )
+            status = "sent"
             sent_count += 1
-
-        except Exception as e:
+        except WhatsAppSendError as exc:
+            error_msg = str(exc)
             failed_count += 1
-            failed_numbers.append(student.mobile_number)
+            failed_numbers.append(phone)
+            logger.warning("Bulk WhatsApp failed for student %s (%s): %s", student.id, phone, exc)
+        except Exception as exc:
+            error_msg = str(exc)
+            failed_count += 1
+            failed_numbers.append(phone)
+            logger.error("Unexpected bulk send error for %s: %s", phone, exc)
 
-            # Log failed SMS
-            sms_notification = SMSNotificationModel(
-                school_id=bulk_request.school_id,
-                recipient_phone=student.mobile_number,
-                recipient_name=f"{student.first_name} {student.last_name}",
-                student_id=student.id,
-                message=message,
-                notification_type=bulk_request.notification_type.value,
-                status="failed",
-                error_message=str(e),
-                sent_by_user_id=current_user.id
-            )
-            db.add(sms_notification)
+        db.add(WhatsAppNotificationModel(
+            school_id=request.school_id,
+            recipient_phone=phone,
+            recipient_name=f"{student.first_name} {student.last_name}",
+            student_id=student.id,
+            message=rendered,
+            notification_type=request.notification_type.value,
+            status=status,
+            meta_message_id=wamid,
+            error_message=error_msg,
+            sent_by_user_id=current_user.id,
+            sent_at=datetime.now(timezone.utc) if status == "sent" else None,
+        ))
 
     db.commit()
-
-    return SMSSendResponse(
+    return WhatsAppSendResponse(
         total_sent=sent_count,
         total_failed=failed_count,
         failed_numbers=failed_numbers,
-        message=f"Bulk SMS sent successfully to {sent_count} recipients. {failed_count} failed."
+        message=f"Bulk send complete: {sent_count} sent, {failed_count} failed.",
     )
 
-# ===== SMS History Endpoints =====
 
-@router.get("/sms/history", response_model=List[SMSNotificationWithStudent], dependencies=[Depends(is_admin)])
-def get_sms_history(
+# ─────────────────────────────────────────────────────────────
+# History & Stats Endpoints
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/whatsapp/history", response_model=List[WhatsAppNotificationWithStudent], dependencies=[Depends(is_admin)])
+def get_whatsapp_history(
     notification_type: Optional[str] = None,
     status: Optional[str] = None,
     student_id: Optional[uuid.UUID] = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
-    school_id: str = Depends(get_current_user_school)
+    school_id: str = Depends(get_current_user_school),
 ):
-    """Get SMS history with filters."""
-    query = tenant_aware_query(db, SMSNotificationModel, school_id).options(
-        selectinload(SMSNotificationModel.student).selectinload(StudentModel.class_)
+    query = tenant_aware_query(db, WhatsAppNotificationModel, school_id).options(
+        selectinload(WhatsAppNotificationModel.student).selectinload(StudentModel.class_)
     )
-
     if notification_type:
-        query = query.filter(SMSNotificationModel.notification_type == notification_type)
-
+        query = query.filter(WhatsAppNotificationModel.notification_type == notification_type)
     if status:
-        query = query.filter(SMSNotificationModel.status == status)
-
+        query = query.filter(WhatsAppNotificationModel.status == status)
     if student_id:
-        query = query.filter(SMSNotificationModel.student_id == student_id)
+        query = query.filter(WhatsAppNotificationModel.student_id == student_id)
 
-    notifications = query.order_by(SMSNotificationModel.created_at.desc()).offset(offset).limit(limit).all()
+    notifications = query.order_by(WhatsAppNotificationModel.created_at.desc()).offset(offset).limit(limit).all()
 
-    # Build response with student details
     result = []
     for notif in notifications:
-        notif_dict = notif.__dict__.copy()
+        d = {c.name: getattr(notif, c.name) for c in notif.__table__.columns}
         if notif.student:
-            notif_dict['student_name'] = f"{notif.student.first_name} {notif.student.last_name}"
-            notif_dict['admission_number'] = notif.student.admission_number
-            notif_dict['class_name'] = notif.student.class_.name if notif.student.class_ else None
+            d["student_name"] = f"{notif.student.first_name} {notif.student.last_name}"
+            d["admission_number"] = notif.student.admission_number
+            d["class_name"] = notif.student.class_.name if notif.student.class_ else None
         else:
-            notif_dict['student_name'] = None
-            notif_dict['admission_number'] = None
-            notif_dict['class_name'] = None
-        result.append(notif_dict)
-
+            d["student_name"] = None
+            d["admission_number"] = None
+            d["class_name"] = None
+        result.append(d)
     return result
 
-@router.get("/sms/stats", dependencies=[Depends(is_admin)])
-def get_sms_stats(
-    db: Session = Depends(get_db),
-    school_id: str = Depends(get_current_user_school)
-):
-    """Get SMS statistics for the school."""
-    total = tenant_aware_query(db, SMSNotificationModel, school_id).count()
-    sent = tenant_aware_query(db, SMSNotificationModel, school_id).filter(
-        SMSNotificationModel.status == "sent"
-    ).count()
-    failed = tenant_aware_query(db, SMSNotificationModel, school_id).filter(
-        SMSNotificationModel.status == "failed"
-    ).count()
-    pending = tenant_aware_query(db, SMSNotificationModel, school_id).filter(
-        SMSNotificationModel.status == "pending"
-    ).count()
 
+@router.get("/whatsapp/stats", dependencies=[Depends(is_admin)])
+def get_whatsapp_stats(
+    db: Session = Depends(get_db),
+    school_id: str = Depends(get_current_user_school),
+):
+    base = tenant_aware_query(db, WhatsAppNotificationModel, school_id)
     return {
-        "total": total,
-        "sent": sent,
-        "failed": failed,
-        "pending": pending
+        "total":     base.count(),
+        "sent":      base.filter(WhatsAppNotificationModel.status == "sent").count(),
+        "delivered": base.filter(WhatsAppNotificationModel.status == "delivered").count(),
+        "read":      base.filter(WhatsAppNotificationModel.status == "read").count(),
+        "failed":    base.filter(WhatsAppNotificationModel.status == "failed").count(),
+        "pending":   base.filter(WhatsAppNotificationModel.status == "pending").count(),
     }

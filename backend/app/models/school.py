@@ -59,3 +59,6 @@ class School(Base):
     periods = relationship("Period", back_populates="school")
     timetable_entries = relationship("TimetableEntry", back_populates="school")
     calendar_events = relationship("CalendarEvent", back_populates="school")
+    sms_templates = relationship("SMSTemplate", back_populates="school")
+    sms_notifications = relationship("SMSNotification", back_populates="school")
+    whatsapp_credential = relationship("WhatsAppCredential", back_populates="school", uselist=False)

@@ -25,7 +25,7 @@ import HostelPage from './pages/Hostel';
 import PrintSettingsPage from './pages/PrintSettingsPage';
 import YearPlanner from './pages/YearPlanner';
 import Certificates from './pages/Certificates';
-import SMSNotifications from './pages/SMSNotifications';
+import WhatsAppNotifications from './pages/SMSNotifications';
 import Parents from './pages/Parents';
 
 function App() {
@@ -60,7 +60,7 @@ function App() {
             <Route path="hostel" element={<HostelPage />} />
             <Route path="print-settings" element={<PrintSettingsPage />} />
             <Route path="certificates" element={<Certificates />} />
-            <Route path="sms-notifications" element={<SMSNotifications />} />
+            <Route path="whatsapp" element={<WhatsAppNotifications />} />
           </Route>
         </Route>
       </Routes>

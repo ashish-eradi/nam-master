@@ -64,4 +64,7 @@ desktop-app/assets/images/*.tar
 # AI tool local configs
 .claude/
 .gemini/
+.agents/
+.mcp.json
+skills-lock.json
 docs/
