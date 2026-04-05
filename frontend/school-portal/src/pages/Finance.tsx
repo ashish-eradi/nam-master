@@ -1228,11 +1228,9 @@ const BulkClassFeeAssignment: React.FC = () => {
               size="large"
               style={{ width: '100%' }}
             >
-              {[-2, -1, 0, 1].map(offset => {
-                const y = currentYear + offset;
-                const label = `${y}-${String(y + 1).slice(-2)}`;
-                return <Option key={label} value={label}>{label}</Option>;
-              })}
+              {getAcademicYearOptions(2, 1).map(y => (
+                <Option key={y} value={y}>{y}</Option>
+              ))}
             </Select>
           </Col>
         </Row>
